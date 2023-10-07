@@ -6,16 +6,25 @@ WriteMakefile(
     NAME              => 'Socket::More::Lookup',
     VERSION_FROM      => 'lib/Socket/More/Lookup.pm', # finds $VERSION, requires EU::MM from perl >= 5.5
     PREREQ_PM         => {}, # e.g., Module::Name => 1.1
-    ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pm', # retrieve abstract from module
-    AUTHOR            => 'Ruben Westerberg <drclaw@local>',
-    #LICENSE           => 'perl',
-    #Value must be from legacy list of licenses here
-    #https://metacpan.org/pod/Module::Build::API
+    ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pod', # retrieve abstract from module
+    AUTHOR            => 'Ruben Westerberg <drclaw@mac.com>',
     LIBS              => [''], # e.g., '-lm'
     DEFINE            => '', # e.g., '-DHAVE_SOMETHING'
     INC               => '-I.', # e.g., '-I. -I/usr/include/other'
-	# Un-comment this if you add C files to link with later:
-    # OBJECT            => '$(O_FILES)', # link all the C files too
+
+	MIN_PERL_VERSION=>"v5.36.0",
+	META_ADD => {
+		"meta-spec" => {
+			version => 2
+		},
+		resources=> {
+			repository =>{
+				type => "git",
+				url => "git://github.com/drclaw1394/perl-socket-more-lookup.git",
+				web => "http://github.com/drclaw1394/perl-socket-more-lookup",
+			}
+		}
+	}
 );
 if  (eval {require ExtUtils::Constant; 1}) {
   # If you edit these definitions to change the constants used by this module,
