@@ -1,0 +1,10 @@
+Changes
+Lookup.xs
+Makefile.PL
+MANIFEST
+ppport.h
+README
+t/Socket-More-Lookup.t
+fallback/const-c.inc
+fallback/const-xs.inc
+lib/Socket/More/Lookup.pm
