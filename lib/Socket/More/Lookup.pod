@@ -1,0 +1,97 @@
+=head1 NAME
+
+Socket::More::Lookup - System DNS lookup routines
+
+=head1 SYNOPSIS
+
+  use Socket::More::Lookup
+
+  # Converte a host name to one or more address structures
+  my $res=getaddrinfo( "www.google.com", 80, {family=>AF_INET}, my @results);
+  die gai_strerror($!) unless $res;
+
+  # Convert an addres structure to a hostname and port
+  my $res=getnameinfo($addr, my $host="", my $port="", $flags);
+  die gai_strerror($!) unless $res;
+
+
+=head1 DESCRIPTION
+
+Bindings to getaddrinfo, getnameinfo, gai_strerror. The calling convention is
+more inline with the C library, and not like the L<Socket> implementation.
+
+
+=head1 API
+
+=head2 getaddrinfo
+
+  my $res=getaddrinfo($host, $port, $hints, @results)
+
+Calls the C<getaddrinfo> library function to resolve the address information of
+C<$host>. The C<$port> variable is filled into the resulting address structure.
+
+The address structures returned are influenced by the C<$hints> hash with keys
+B<flags>, B<family>, B<type> and B<protocal>. Please refer to the man page of
+getaddrinfo for details.
+
+Results, if any are are stored in C<@results>. Each entry in the results array
+is a hash with the keys B<family>, B<type>, B<protocal>, B<addr> and
+C<cannonname>. Please refere to the main page of getaddrinfo for details.
+
+Returns true on success, on undef on failure. In the later case C<$!> is set to
+the numeric error code, which can then be converted to a stirng via
+C<gai_strerror>
+
+
+
+=head2 getnaminfo
+
+  my $res=getnameinfo($sock_addr, $host, $port);
+  my $res=getnameinfo($sock_addr, my $host="", my $port="",$flags);
+
+Calls the C<getnameinfo>library function to convert a known address structure
+to a host and port. The resulting hostname and port number are stored in the
+arguments C<$host> and C<$port>. This must be defined string and writable
+variables.
+
+The output is influenced by the C<$flags> argument. Please refer to the man
+page of getnameinfo for details.
+
+Returns true on success, on undef on failure. In the later case C<$!> is set to
+the numeric error code, which can then be converted to a stirng via
+C<gai_strerror>
+
+
+=head2 gai_strerror
+
+  my $string=gai_strerror($code)
+
+Converts a numerical error code returned from either getaddrinfo or getnameinfo
+into a human readable stirng. Please refer to man page of gai_strerror for more
+details
+
+=head1 AUTHOR
+
+Ruben Westerberg, E<lt>drclaw@mac.com<gt>
+
+=head1 REPOSITORTY and BUGS
+
+Please report any bugs via git hub: L<http://github.com/drclaw1394/perl-socket-more>
+
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2023 by Ruben Westerberg
+
+This library is free software; you can redistribute it and/or modify it under
+the same terms as Perl or the MIT license.
+
+=head1 DISCLAIMER OF WARRANTIES
+
+THIS PACKAGE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE.
+
+=cut
+
+

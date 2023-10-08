@@ -7,11 +7,17 @@
 
 #include "const-c.inc"
 
+
+#ifdef WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <net/if.h>
 #include <ifaddrs.h>
 #include <sys/un.h>
+#endif
 
 MODULE = Socket::More::Lookup		PACKAGE = Socket::More::Lookup		
 
