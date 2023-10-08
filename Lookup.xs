@@ -26,13 +26,12 @@ INCLUDE: const-xs.inc
 
 BOOT:
 #ifdef WIN32
-     // Initialize Winsock
+     // Initialize Winsock or nothing works
      WSADATA wsaData;
      int iResult;
       iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
       if (iResult != 0) {
-          fprintf(stderr, "WSAStartup failed: %d\n", iResult);
-          exit(-1);
+          Perl_croak(aTHX_ "WSAStartup failed: %d\n", iResult);
       }
 #endif
 
