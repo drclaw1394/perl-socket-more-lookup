@@ -5,7 +5,10 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'Socket::More::Lookup',
     VERSION_FROM      => 'lib/Socket/More/Lookup.pm', # finds $VERSION, requires EU::MM from perl >= 5.5
-    PREREQ_PM         => {}, # e.g., Module::Name => 1.1
+    PREREQ_PM         => {
+      "Export::These" =>0,
+      "Socket::More::Constants"=>0
+    }, 
     ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pod', # retrieve abstract from module
     AUTHOR            => 'Ruben Westerberg <drclaw@mac.com>',
     LIBS              => [''], # e.g., '-lm'

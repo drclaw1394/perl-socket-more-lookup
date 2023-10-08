@@ -36,6 +36,6 @@ use Socket::More::Constants;
 {
   # get name info
       my $name=pack_sockaddr_in(1234, pack "C4", 127,0,0,1);
-      my $err=getnameinfo($name, my $ip="", my $port="", NI_NUMERICHOST|NI_NUMERICSERV);
+      my $err=Socket::More::Lookup::getnameinfo($name, my $ip="", my $port="", NI_NUMERICHOST|NI_NUMERICSERV);
 }
 done_testing;
