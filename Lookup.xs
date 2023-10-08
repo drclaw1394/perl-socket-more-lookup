@@ -23,6 +23,19 @@ MODULE = Socket::More::Lookup		PACKAGE = Socket::More::Lookup
 
 INCLUDE: const-xs.inc
 
+
+BOOT:
+#ifdef WIN32
+     // Initialize Winsock
+     WSADATA wsaData;
+     int iResult;
+      iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+      if (iResult != 0) {
+          fprintf(stderr, "WSAStartup failed: %d\n", iResult);
+          exit(-1);
+      }
+#endif
+
 SV*
 getaddrinfo(hostname, servicename, hints, results)
     SV *hostname
