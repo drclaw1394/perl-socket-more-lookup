@@ -11,7 +11,6 @@ use warnings;
 use Test::More;
 BEGIN { use_ok('Socket::More::Lookup') };
 
-use Socket;
 use Socket::More::Lookup;
 use Socket::More::Constants;
 
@@ -22,7 +21,7 @@ use Socket::More::Constants;
 
 {
   # getaddrinfo
-  my $res=Socket::More::Lookup::getaddrinfo("www.google.com", "80", undef, my @results);
+  my $res=getaddrinfo("www.google.com", "80", undef, my @results);
   ok $res, "Return ok";
   die gai_strerror $! unless $res;
   ok @results>0, "Results ok";
@@ -35,7 +34,10 @@ use Socket::More::Constants;
 
 {
   # get name info
-      my $name=pack_sockaddr_in(1234, pack "C4", 127,0,0,1);
-      my $err=Socket::More::Lookup::getnameinfo($name, my $ip="", my $port="", NI_NUMERICHOST|NI_NUMERICSERV);
+  #
+    require  Socket;
+
+      my $name=Socket::pack_sockaddr_in(1234, pack "C4", 127,0,0,1);
+      my $err=getnameinfo($name, my $ip="", my $port="", NI_NUMERICHOST|NI_NUMERICSERV);
 }
 done_testing;
