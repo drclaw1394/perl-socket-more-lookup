@@ -4,7 +4,8 @@ Socket::More::Lookup - System DNS lookup routines
 
 =head1 SYNOPSIS
 
-  use Socket::More::Lookup
+  use Socket::More::Lookup;
+  use Socket::More::Constants;
 
   # Converte a host name to one or more address structures
   my $res=getaddrinfo( "www.google.com", 80, {family=>AF_INET}, my @results);
@@ -17,8 +18,16 @@ Socket::More::Lookup - System DNS lookup routines
 
 =head1 DESCRIPTION
 
-Bindings to getaddrinfo, getnameinfo, gai_strerror. The calling convention is
-more inline with the C library, and not like the L<Socket> implementation.
+Bindings to getaddrinfo, getnameinfo, gai_strerror with calling a convention
+more inline with the C library, and Perl's 'sys*' subroutines. That is, the
+return value of get*info is 'true' value on success and C<undef> on failure,
+with C<$!> containing the error code.
+
+The actual results are stored arguments, not returned as a combined err/results
+list like the L<Socket> implementation.
+
+This module is part of L<Socket::More> but exists as a standalone package for
+better reuse and smaller memory footprint 
 
 
 =head1 API
@@ -36,11 +45,12 @@ getaddrinfo for details.
 
 Results, if any are are stored in C<@results>. Each entry in the results array
 is a hash with the keys B<family>, B<type>, B<protocal>, B<addr> and
-C<cannonname>. Please refere to the main page of getaddrinfo for details.
+C<cannonname>. Please refer to the main page of getaddrinfo for details.
 
-Returns true on success, on undef on failure. In the later case C<$!> is set to
-the numeric error code, which can then be converted to a stirng via
-C<gai_strerror>
+Returns true on success, on C<undef> on failure. In the later case C<$!> is set
+to the numeric error code, which can then be converted to a string via
+C<gai_strerror>.
+
 
 
 
@@ -58,7 +68,7 @@ The output is influenced by the C<$flags> argument. Please refer to the man
 page of getnameinfo for details.
 
 Returns true on success, on undef on failure. In the later case C<$!> is set to
-the numeric error code, which can then be converted to a stirng via
+the numeric error code, which can then be converted to a string via
 C<gai_strerror>
 
 
@@ -67,16 +77,16 @@ C<gai_strerror>
   my $string=gai_strerror($code)
 
 Converts a numerical error code returned from either getaddrinfo or getnameinfo
-into a human readable stirng. Please refer to man page of gai_strerror for more
+into a human readable string. Please refer to man page of gai_strerror for more
 details
 
 =head1 AUTHOR
 
-Ruben Westerberg, E<lt>drclaw@mac.com<gt>
+Ruben Westerberg, E<lt>drclaw@mac.comE<gt>
 
 =head1 REPOSITORTY and BUGS
 
-Please report any bugs via git hub: L<http://github.com/drclaw1394/perl-socket-more>
+Please report any bugs via git hub: L<http://github.com/drclaw1394/perl-socket-more-lookup>
 
 
 =head1 COPYRIGHT AND LICENSE

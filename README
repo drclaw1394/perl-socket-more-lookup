@@ -1,40 +1,88 @@
-Socket-More-Lookup version 0.01
-===============================
+NAME
+    Socket::More::Lookup - System DNS lookup routines
 
-The README is used to introduce the module and provide instructions on
-how to install the module, any machine dependencies it may have (for
-example C compilers and installed libraries) and any other information
-that should be provided before the module is installed.
+SYNOPSIS
+      use Socket::More::Lookup;
+      use Socket::More::Constants;
 
-A README file is required for CPAN modules since CPAN extracts the
-README file from a module distribution so that people browsing the
-archive can use it get an idea of the modules uses. It is usually a
-good idea to provide version information here so that people can
-decide whether fixes for the module are worth downloading.
+      # Converte a host name to one or more address structures
+      my $res=getaddrinfo( "www.google.com", 80, {family=>AF_INET}, my @results);
+      die gai_strerror($!) unless $res;
 
-INSTALLATION
+      # Convert an addres structure to a hostname and port
+      my $res=getnameinfo($addr, my $host="", my $port="", $flags);
+      die gai_strerror($!) unless $res;
 
-To install this module type the following:
+DESCRIPTION
+    Bindings to getaddrinfo, getnameinfo, gai_strerror with calling a
+    convention more inline with the C library, and Perl's 'sys*'
+    subroutines. That is, the return value of get*info is 'true' value on
+    success and "undef" on failure, with $! containing the error code.
 
-   perl Makefile.PL
-   make
-   make test
-   make install
+    The actual results are stored arguments, not returned as a combined
+    err/results list like the Socket implementation.
 
-DEPENDENCIES
+    This module is part of Socket::More but exists as a standalone package
+    for better reuse and smaller memory footprint
 
-This module requires these other modules and libraries:
+API
+  getaddrinfo
+      my $res=getaddrinfo($host, $port, $hints, @results)
 
-  blah blah blah
+    Calls the "getaddrinfo" library function to resolve the address
+    information of $host. The $port variable is filled into the resulting
+    address structure.
 
-COPYRIGHT AND LICENCE
+    The address structures returned are influenced by the $hints hash with
+    keys flags, family, type and protocal. Please refer to the man page of
+    getaddrinfo for details.
 
-Put the correct copyright and licence information here.
+    Results, if any are are stored in @results. Each entry in the results
+    array is a hash with the keys family, type, protocal, addr and
+    "cannonname". Please refer to the main page of getaddrinfo for details.
 
-Copyright (C) 2023 by Ruben Westerberg
+    Returns true on success, on "undef" on failure. In the later case $! is
+    set to the numeric error code, which can then be converted to a string
+    via "gai_strerror".
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.36.0 or,
-at your option, any later version of Perl 5 you may have available.
+  getnaminfo
+      my $res=getnameinfo($sock_addr, $host, $port);
+      my $res=getnameinfo($sock_addr, my $host="", my $port="",$flags);
 
+    Calls the "getnameinfo"library function to convert a known address
+    structure to a host and port. The resulting hostname and port number are
+    stored in the arguments $host and $port. This must be defined string and
+    writable variables.
+
+    The output is influenced by the $flags argument. Please refer to the man
+    page of getnameinfo for details.
+
+    Returns true on success, on undef on failure. In the later case $! is
+    set to the numeric error code, which can then be converted to a string
+    via "gai_strerror"
+
+  gai_strerror
+      my $string=gai_strerror($code)
+
+    Converts a numerical error code returned from either getaddrinfo or
+    getnameinfo into a human readable string. Please refer to man page of
+    gai_strerror for more details
+
+AUTHOR
+    Ruben Westerberg, <drclaw@mac.com>
+
+REPOSITORTY and BUGS
+    Please report any bugs via git hub:
+    <http://github.com/drclaw1394/perl-socket-more-lookup>
+
+COPYRIGHT AND LICENSE
+    Copyright (C) 2023 by Ruben Westerberg
+
+    This library is free software; you can redistribute it and/or modify it
+    under the same terms as Perl or the MIT license.
+
+DISCLAIMER OF WARRANTIES
+    THIS PACKAGE IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED
+    WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 
