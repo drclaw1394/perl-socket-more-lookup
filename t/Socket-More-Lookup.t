@@ -15,7 +15,7 @@ use Socket::More::Constants;
   ok @results>0, "Results ok";
 
   # Expect an array of hashes for undef input
-  ok ref($results[0]) eq "HASH", "Expected hash result";
+  ok ref($results[0]) eq "HASH", "Lookup www.google.com: Expected hash results";
 
   for(@results){
     #for my ($k, $v)($_->%*){
@@ -25,7 +25,7 @@ use Socket::More::Constants;
 }
 {
   # getaddrinfo
-  my $res=getaddrinfo("rmbp.local", "80", [NI_NUMERICSERV|NI_NUMERICHOST, AF_INET, SOCK_STREAM], my @results);
+  my $res=getaddrinfo("www.google.com", "80", [NI_NUMERICSERV|NI_NUMERICHOST, AF_INET, SOCK_STREAM], my @results);
   ok $res, "Return ok";
   die gai_strerror $! unless $res;
   ok @results>0, "Results ok";
@@ -34,7 +34,7 @@ use Socket::More::Constants;
 
   say STDERR Dumper \@results;
   # Expect an array of hashes for undef input
-  ok ref($results[0]) eq "ARRAY", "Expected array result";
+  ok ref($results[0]) eq "ARRAY", "Lookup www.google.com: Expect array results";
 
   for(@results){
     #for my ($k, $v)($_->%*){
