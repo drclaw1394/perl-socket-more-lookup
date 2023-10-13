@@ -19,6 +19,13 @@
 #include <sys/un.h>
 #endif
 
+#define AV_FLAGS      0
+#define AV_FAMILY     1
+#define AV_TYPE       2
+#define AV_PROTOCOL   3
+#define AV_ADDR       4
+#define AV_CANONNAME  5
+
 MODULE = Socket::More::Lookup		PACKAGE = Socket::More::Lookup		
 
 INCLUDE: const-xs.inc
@@ -53,6 +60,7 @@ getaddrinfo(hostname, servicename, hints, results)
     struct addrinfo *next;
     int len;
     SV *temp;
+    bool return_av;
     
 
   PPCODE: 
@@ -69,6 +77,8 @@ getaddrinfo(hostname, servicename, hints, results)
     // First check that output array is doable
     
     //expectiong a hostname 
+
+    return_av=false; //Default to a hash return
 
     if(SvOK(hostname) && SvPOK(hostname)){
       len=SvCUR(hostname);
@@ -96,30 +106,79 @@ getaddrinfo(hostname, servicename, hints, results)
 
     if(SvOK(hints) && SvROK(hints)){
       SV** temp;
-      HV* hv=(HV *)SvRV(hints);
+      SV** key;
+      SV** val;
+      AV* av; 
+      HV* hv;
+      int len;
+      int i=0;
 
-      temp=hv_fetch(hv,"flags",5,1);
-      if((temp != NULL ) &&SvIOK(*temp)){
+      switch(SvTYPE(SvRV(hints))){
+        case SVt_PVAV:
+          // Treat as 'array struct'
+              
+          return_av=true;
+          av=(AV *)SvRV(hints);
+          //len=av_top_index(av)+1;
 
-        h.ai_flags = SvIV(*temp);
-      }
-      temp=hv_fetch(hv,"family",6,1);
-      if((temp != NULL ) &&SvIOK(*temp)){
-        h.ai_family = SvIV(*temp);
-      }
-      temp=hv_fetch(hv,"type",4,1);
-      if((temp != NULL ) &&SvIOK(*temp)){
-        h.ai_socktype = SvIV(*temp);
-      }
-      temp=hv_fetch(hv,"protocol",8,1);
-      if((temp != NULL ) &&SvIOK(*temp)){
-        h.ai_protocol = SvIV(*temp);
+          val=av_fetch(av,i++,0);
+          if((val != NULL) && SvOK(*val)){
+            //fprintf(stderr, "FLAGS: %ld\n",SvIV(*val));
+            h.ai_flags = SvIV(*val);
+          }
+
+          val=av_fetch(av,i++,0);
+          if((val != NULL) && SvOK(*val)){
+            //fprintf(stderr, "family: %ld\n",SvIV(*val));
+            h.ai_family = SvIV(*val);
+          }
+
+          val=av_fetch(av,i++,0);
+          if((val != NULL) && SvOK(*val)){
+            //fprintf(stderr, "sock type: %ld\n",SvIV(*val));
+            h.ai_socktype = SvIV(*val);
+          }
+
+          val=av_fetch(av,i++,0);
+          if((val != NULL) && SvOK(*val)){
+            //fprintf(stderr, "protocol: %ld\n",SvIV(*val));
+            h.ai_protocol = SvIV(*val);
+          }
+
+          break;
+
+        case SVt_PVHV:
+          return_av=false;
+          hv=(HV *)SvRV(hints);
+          temp=hv_fetch(hv,"flags",5,1);
+          if((temp != NULL ) &&SvIOK(*temp)){
+            h.ai_flags = SvIV(*temp);
+          }
+          temp=hv_fetch(hv,"family",6,1);
+          if((temp != NULL ) &&SvIOK(*temp)){
+            h.ai_family = SvIV(*temp);
+          }
+          temp=hv_fetch(hv,"type",4,1);
+          if((temp != NULL ) &&SvIOK(*temp)){
+            h.ai_socktype = SvIV(*temp);
+          }
+          temp=hv_fetch(hv,"protocol",8,1);
+          if((temp != NULL ) &&SvIOK(*temp)){
+            h.ai_protocol = SvIV(*temp);
+          }
+
+          break;
+        default:
+          Perl_croak(aTHX_ "%s", "Hints must be an array or hash ref");
+          break;
       }
     }
 
     //XSRETURN_UNDEF;
 
+    //fprintf(stderr, "about to do call\n");
     ret=getaddrinfo(hname, sname, &h, &res);
+    //fprintf(stderr, "after to do call\n");
 
 
     if(ret!=0){
@@ -133,6 +192,7 @@ getaddrinfo(hostname, servicename, hints, results)
     else{
       // Copy results into output array
       HV *h;
+      AV *a;
       int count=0;
       next=res;
       while(next){
@@ -143,21 +203,36 @@ getaddrinfo(hostname, servicename, hints, results)
       //Resize output array to  fit count 
       int i=0;
       next=res;
-      while(next){
-        h=newHV();
-        hv_store(h, "family", 6, newSViv(next->ai_family), 0);
-        hv_store(h, "type", 4, newSViv(next->ai_socktype), 0);
-        hv_store(h, "protocol", 8, newSViv(next->ai_protocol), 0);
-        hv_store(h, "addr", 4, newSVpv((char *)(next->ai_addr), next->ai_addrlen), 0);
-        hv_store(h, "canonname", 9, newSVpv(next->ai_canonname,0), 0);
+      if(return_av){
+        while(next){
+          a=newAV();
+          av_store(a, AV_FLAGS, newSViv(0));
+          av_store(a, AV_FAMILY, newSViv(next->ai_family));
+          av_store(a, AV_TYPE, newSViv(next->ai_socktype));
+          av_store(a, AV_ADDR, newSVpv((char *) next->ai_addr,next->ai_addrlen));
+          av_store(a, AV_CANONNAME, newSVpv(next->ai_canonname,0));
+          //Push results to return stack
+          next=next->ai_next;
+          av_store(results,i,newRV((SV *)a));
+          i++;
 
-        //Push results to return stack
-        next=next->ai_next;
-        av_store(results,i,newRV((SV *)h));
-        i++;
-        //mXPUSHs(newRV((SV *)h));
-        //count++;
+        }
+      }
+      else {
+        while(next){
+          h=newHV();
+          hv_store(h, "family", 6, newSViv(next->ai_family), 0);
+          hv_store(h, "type", 4, newSViv(next->ai_socktype), 0);
+          hv_store(h, "protocol", 8, newSViv(next->ai_protocol), 0);
+          hv_store(h, "addr", 4, newSVpv((char *)(next->ai_addr), next->ai_addrlen), 0);
+          hv_store(h, "canonname", 9, newSVpv(next->ai_canonname,0), 0);
 
+          //Push results to return stack
+          next=next->ai_next;
+          av_store(results,i,newRV((SV *)h));
+          i++;
+
+        }
       }
       freeaddrinfo(res);
 
