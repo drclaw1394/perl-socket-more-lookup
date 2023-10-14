@@ -34,18 +34,29 @@ better reuse and smaller memory footprint
 
 =head2 getaddrinfo
 
-  my $res=getaddrinfo($host, $port, $hints, @results)
+  my $res=getaddrinfo($host, $port, \%hints, @results)
+
+  my $res=getaddrinfo($host, $port, \@hints, @results)
 
 Calls the C<getaddrinfo> library function to resolve the address information of
 C<$host>. The C<$port> variable is filled into the resulting address structure.
 
-The address structures returned are influenced by the C<$hints> hash with keys
-B<flags>, B<family>, B<type> and B<protocal>. Please refer to the man page of
-getaddrinfo for details.
+The address structures returned are influenced by the hints provided by as
+either a hash reference C<\%hints> or  array reference C<\@hints>. 
 
-Results, if any are are stored in C<@results>. Each entry in the results array
-is a hash with the keys B<family>, B<type>, B<protocal>, B<addr> and
-C<cannonname>. Please refer to the main page of getaddrinfo for details.
+The hash keys accepted for hints are B<flags>, B<family>, B<type> and
+B<protocal>. The array version expects each element to be in this order.
+
+Please refer to the man page of getaddrinfo for details on what the hint values
+mean.
+
+Results, if any are are stored in C<@results>. If the hints argument was a hash
+reference, the results are represented as a hash references. If hints was an
+array reference, the results are represented as array references.  The hash
+case contains the keys B<flags>, B<family>, B<type>, B<protocal>, B<addr> and
+C<cannonname>. The array case contains the fields in the same order.
+
+Please refer to the main page of getaddrinfo for details.
 
 Returns true on success, on C<undef> on failure. In the later case C<$!> is set
 to the numeric error code, which can then be converted to a string via

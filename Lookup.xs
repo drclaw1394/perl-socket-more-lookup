@@ -57,6 +57,7 @@ getaddrinfo(hostname, servicename, hints, results)
     char *sname=NULL;
     struct addrinfo *res;
     struct addrinfo h;
+    struct addrinfo  *hh=NULL;
     struct addrinfo *next;
     int len;
     SV *temp;
@@ -64,7 +65,6 @@ getaddrinfo(hostname, servicename, hints, results)
     
 
   PPCODE: 
-
     h.ai_flags=0;
     h.ai_family=0;
     h.ai_socktype=0;
@@ -144,6 +144,7 @@ getaddrinfo(hostname, servicename, hints, results)
             //fprintf(stderr, "protocol: %ld\n",SvIV(*val));
             h.ai_protocol = SvIV(*val);
           }
+          hh=&h;
 
           break;
 
@@ -166,27 +167,25 @@ getaddrinfo(hostname, servicename, hints, results)
           if((temp != NULL ) &&SvIOK(*temp)){
             h.ai_protocol = SvIV(*temp);
           }
+          hh=&h;
 
           break;
+
         default:
-          Perl_croak(aTHX_ "%s", "Hints must be an array or hash ref");
+          //Perl_croak(aTHX_ "%s", "Hints must be an array or hash ref");
+          // Assume no hints. Let getaddrinfo work with the default hints by setting to NULL 
+          hh=NULL;
           break;
       }
     }
 
-    //XSRETURN_UNDEF;
 
-    //fprintf(stderr, "about to do call\n");
-    ret=getaddrinfo(hname, sname, &h, &res);
-    //fprintf(stderr, "after to do call\n");
+    ret=getaddrinfo(hname, sname, hh, &res);
 
 
     if(ret!=0){
       // The return array to error?
       errno=ret;
-      //SV * e=get_sv("!",GV_ADD);
-      //sv_setiv(e, ret);
-      //sv_setpv(e, gai_strerror(ret));
       XSRETURN_UNDEF;
     }
     else{
@@ -209,8 +208,14 @@ getaddrinfo(hostname, servicename, hints, results)
           av_store(a, AV_FLAGS, newSViv(0));
           av_store(a, AV_FAMILY, newSViv(next->ai_family));
           av_store(a, AV_TYPE, newSViv(next->ai_socktype));
-          av_store(a, AV_ADDR, newSVpv((char *) next->ai_addr,next->ai_addrlen));
-          av_store(a, AV_CANONNAME, newSVpv(next->ai_canonname,0));
+          av_store(a, AV_PROTOCOL, newSViv(next->ai_protocol));
+          av_store(a, AV_ADDR, newSVpv((char *) next->ai_addr, next->ai_addrlen));
+          if(next->ai_canonname == NULL){
+            av_store(a, AV_CANONNAME, newSVpv("",0));
+          }
+          else {
+            av_store(a, AV_CANONNAME, newSVpv((char *)next->ai_canonname,0));
+          }
           //Push results to return stack
           next=next->ai_next;
           av_store(results,i,newRV((SV *)a));
@@ -225,7 +230,13 @@ getaddrinfo(hostname, servicename, hints, results)
           hv_store(h, "type", 4, newSViv(next->ai_socktype), 0);
           hv_store(h, "protocol", 8, newSViv(next->ai_protocol), 0);
           hv_store(h, "addr", 4, newSVpv((char *)(next->ai_addr), next->ai_addrlen), 0);
-          hv_store(h, "canonname", 9, newSVpv(next->ai_canonname,0), 0);
+          if(next->ai_canonname == NULL){
+            hv_store(h, "canonname", 9, newSVpv("",0), 0);
+          }
+          else {
+            hv_store(h, "canonname", 9, newSVpv(next->ai_canonname,0), 0);
+          }
+
 
           //Push results to return stack
           next=next->ai_next;

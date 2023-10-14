@@ -32,7 +32,7 @@ use Socket::More::Constants;
 
   use Data::Dumper;
 
-  say STDERR Dumper \@results;
+  #say STDERR Dumper \@results;
   # Expect an array of hashes for undef input
   ok ref($results[0]) eq "ARRAY", "Lookup www.google.com: Expect array results";
 
