@@ -119,32 +119,40 @@ getaddrinfo(hostname, servicename, hints, results)
               
           return_av=true;
           av=(AV *)SvRV(hints);
-          //len=av_top_index(av)+1;
 
-          val=av_fetch(av,i++,0);
-          if((val != NULL) && SvOK(*val)){
-            //fprintf(stderr, "FLAGS: %ld\n",SvIV(*val));
-            h.ai_flags = SvIV(*val);
-          }
+          len=av_top_index(av)+1;
+          if(len){
 
-          val=av_fetch(av,i++,0);
-          if((val != NULL) && SvOK(*val)){
-            //fprintf(stderr, "family: %ld\n",SvIV(*val));
-            h.ai_family = SvIV(*val);
-          }
 
-          val=av_fetch(av,i++,0);
-          if((val != NULL) && SvOK(*val)){
-            //fprintf(stderr, "sock type: %ld\n",SvIV(*val));
-            h.ai_socktype = SvIV(*val);
-          }
+            val=av_fetch(av,i++,0);
+            if((val != NULL) && SvOK(*val)){
+              //fprintf(stderr, "FLAGS: %ld\n",SvIV(*val));
+              h.ai_flags = SvIV(*val);
+            }
 
-          val=av_fetch(av,i++,0);
-          if((val != NULL) && SvOK(*val)){
-            //fprintf(stderr, "protocol: %ld\n",SvIV(*val));
-            h.ai_protocol = SvIV(*val);
+            val=av_fetch(av,i++,0);
+            if((val != NULL) && SvOK(*val)){
+              //fprintf(stderr, "family: %ld\n",SvIV(*val));
+              h.ai_family = SvIV(*val);
+            }
+
+            val=av_fetch(av,i++,0);
+            if((val != NULL) && SvOK(*val)){
+              //fprintf(stderr, "sock type: %ld\n",SvIV(*val));
+              h.ai_socktype = SvIV(*val);
+            }
+
+            val=av_fetch(av,i++,0);
+            if((val != NULL) && SvOK(*val)){
+              //fprintf(stderr, "protocol: %ld\n",SvIV(*val));
+              h.ai_protocol = SvIV(*val);
+            }
+            hh=&h;
           }
-          hh=&h;
+          else {
+            //Empty array, treat as default, but still want array
+            hh=NULL;
+          }
 
           break;
 

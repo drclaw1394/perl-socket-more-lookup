@@ -24,13 +24,49 @@ use Socket::More::Constants;
   }
 }
 {
+  # getaddrinfo Default hints, hash
+  my $res=getaddrinfo("www.google.com", "80", undef, my @results);
+  ok $res, "Return ok";
+  die gai_strerror $! unless $res;
+  ok @results>0, "Results ok";
+
+
+  #say STDERR Dumper \@results;
+  # Expect an array of hashes for undef input
+  ok ref($results[0]) eq "HASH", "Lookup www.google.com: Expect array results";
+
+  for(@results){
+    #for my ($k, $v)($_->%*){
+      #say STDERR "$k=>$v";
+      #}
+  }
+}
+
+{
   # getaddrinfo
   my $res=getaddrinfo("www.google.com", "80", [NI_NUMERICSERV|NI_NUMERICHOST, AF_INET, SOCK_STREAM], my @results);
   ok $res, "Return ok";
   die gai_strerror $! unless $res;
   ok @results>0, "Results ok";
 
-  use Data::Dumper;
+
+  #say STDERR Dumper \@results;
+  # Expect an array of hashes for undef input
+  ok ref($results[0]) eq "ARRAY", "Lookup www.google.com: Expect array results";
+
+  for(@results){
+    #for my ($k, $v)($_->%*){
+      #say STDERR "$k=>$v";
+      #}
+  }
+}
+{
+  # getaddrinfo default hints array
+  my $res=getaddrinfo("www.google.com", "80", [], my @results);
+  ok $res, "Return ok";
+  die gai_strerror $! unless $res;
+  ok @results>0, "Results ok";
+
 
   #say STDERR Dumper \@results;
   # Expect an array of hashes for undef input

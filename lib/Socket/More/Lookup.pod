@@ -42,7 +42,9 @@ Calls the C<getaddrinfo> library function to resolve the address information of
 C<$host>. The C<$port> variable is filled into the resulting address structure.
 
 The address structures returned are influenced by the hints provided by as
-either a hash reference C<\%hints> or  array reference C<\@hints>. 
+either a hash reference C<\%hints> or  array reference C<\@hints>.  If it isn't
+a reference, the default hints are used. If the array is an empty array, the
+default hints are used.
 
 The hash keys accepted for hints are B<flags>, B<family>, B<type> and
 B<protocal>. The array version expects each element to be in this order.
