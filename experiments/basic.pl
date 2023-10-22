@@ -1,14 +1,18 @@
 use v5.36;
-#use Data::Dumper;
+use Data::Dumper;
 use Socket::More::Resolver;
 
+my $addr;
 for(1..10){
   say "";
   say "user loop";
-  use Data::Dumper;
-  getaddrinfo("www.google.com.au", 80, {}, sub {say "===USER CALLBACK==="; return; say Dumper $_[0]});
+  getaddrinfo("www.google.com.au", 80, {}, sub {say "===USER CALLBACK===";
+    #say Dumper $_[0]
+    $addr=$_[0][0]{addr};
+  });
 }
 sleep 1 while getaddrinfo();
+getnameinfo($addr, 0, sub { say "GOT RESULTS FOR ADDRESS"; say Dumper $_[0]});
 ####################
 # for(1..4){       #
 #   getaddrinfo(); #

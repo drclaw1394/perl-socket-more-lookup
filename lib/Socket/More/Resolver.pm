@@ -2,19 +2,14 @@ package Socket::More::Resolver;
 use v5.36;
 no warnings "experimental";
 
-#TODO Test if Socket::More::Lookup is available
-#otherwise we just use socket implementation?
 use constant::more DEBUG=>0;
 
 use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL>;
 use constant::more qw<WORKER_ID=0 WORKER_READ WORKER_WRITE WORKER_QUEUE WORKER_BUSY>;
 use constant::more qw<REQ_CMD=0 REQ_ID REQ_DATA REQ_CB REQ_WORKER>;
-#use constant::more qw<PIPE_P2C_READ PIPE_P2C_WRITE
-
-#
-#use Socket::More::Lookup();
 
 use Fcntl;
+
 my $gai_data_pack="l> l> l> l> l>/A* l>/A*";
 
 #REQID  and as above
@@ -42,6 +37,7 @@ my $busy_count=0;
 
 my @pairs;        # file handles for parent/child pipes
                   # preallocated with first import of this module
+
 my $template_pid;
 my $template_worker;
 
@@ -58,6 +54,7 @@ sub import {
   #TODO: NEED TO WORK WITH EXPORT LEVEL INSTEAD OF SIMPLY CALLER
   #
   *{$package."::getaddrinfo"}=\&getaddrinfo;
+  *{$package."::getnameinfo"}=\&getnameinfo;
   *{$package."::close_pool"}=\&close_pool;
 
 
@@ -87,40 +84,34 @@ sub import {
 
   
   # Create the template process here. This is the first worker
-    #Need to bootstrap/ create the first worker, which is used as a template
-    DEBUG and say STDERR "Create worker: Bootrapping  first/template worker"; 
-    my $file=__FILE__; 
-    #say $file;
-    my $worker;
-    # Open pipes
+  #Need to bootstrap/ create the first worker, which is used as a template
+  DEBUG and say STDERR "Create worker: Bootrapping  first/template worker"; 
+
+  my ($parent_read, $parent_write, $child_read, $child_write)=$pairs[$p++]->@*;
+  $k++;
+  my $pid=fork; 
+  $template_pid=$pid;
+
+  if($pid){
+    # parent
     #
-    # the max FD yet
-    #pipe my $child_read, my $parent_write;
-    #pipe my $parent_read, my $child_write;
-    my ($parent_read, $parent_write, $child_read, $child_write)=$pairs[$p++]->@*;
-    $k++;
-    my $pid=fork; 
-    $template_pid=$pid;
-
-    if($pid){
-      # parent
-      #
-      $template_worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
-      push @pool_free, $pid;
-    }
-    else {
-      # child
-      # exec an tell the process which fileno we want to communicate on
-      close $parent_write;
-      close $parent_read;
-      my @ins=map {fileno $_->[2]} @pairs;  # Child read end
-      my @outs=map {fileno $_->[3]} @pairs; # Child write end
-      DEBUG and say STDERR "Create worker: exec with ins: @ins";
-      DEBUG and say STDERR "Create worker: exec with outs: @outs";
-
-      local $"=",";
-      exec $^X, $file, "--in", "@ins", "--out", "@outs";
-    }
+    $template_worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
+    push @pool_free, $pid;
+  }
+  else {
+    # child
+    # exec an tell the process which fileno we want to communicate on
+    close $parent_write;
+    close $parent_read;
+    my @ins=map {fileno $_->[2]} @pairs;  # Child read end
+    my @outs=map {fileno $_->[3]} @pairs; # Child write end
+    DEBUG and say STDERR "Create worker: exec with ins: @ins";
+    DEBUG and say STDERR "Create worker: exec with outs: @outs";
+    my $file=__FILE__; 
+    $file=~s|\.pm|/Worker.pm|;
+    local $"=",";
+    exec $^X, $file, "--in", "@ins", "--out", "@outs";
+  }
   1; 
 }
 
@@ -201,8 +192,23 @@ sub pool_next{
     elsif($req->[REQ_CMD]==CMD_GAI) {
       # getaddrinfo request
       DEBUG and say ">> SENDING CMD_GAI TO WORKER: $req->[REQ_WORKER]";
-      $out.=pack $gai_pack, $req->[REQ_DATA]->@*;
+      if(ref $req->[REQ_DATA] eq "ARRAY"){
+        $out.=pack $gai_pack, $req->[REQ_DATA]->@*;
+      }
+      else {
+        # assume a hash
+        for($req->[REQ_DATA]){
+          $out.=pack $gai_pack, $_->{flags}//0, $_->{family}//0, $_->{type}//0, $_->{protocol}//0, $_->{host}, $_->{port};
+        }
+      }
+
       $ofd=$_->[WORKER_WRITE];
+    }
+    elsif($req->[REQ_CMD]==CMD_GNI){
+      DEBUG and say ">> SENDING CMD_GNI TO WORKER: $req->[REQ_WORKER]";
+      $out.=pack "l>/A* l>", $req->[REQ_DATA]->@*;
+      $ofd=$_->[WORKER_WRITE];
+
     }
     elsif($req->[REQ_CMD]== CMD_KILL){
       DEBUG and say ">> Sending CMD_KILL to worker: $req->[REQ_WORKER]";
@@ -245,9 +251,10 @@ sub process_results{
     if($cmd==CMD_GAI){
       DEBUG and say "<< GAI return from worker $entry->[REQ_WORKER]";
       my @res=unpack $gai_pack, $bin;
-      if($entry and $entry->[2]){
+      if($entry and $entry->[REQ_CB]){
         my @list;
         for my( $error, $family, $type, $protocol, $addr, $canonname)(@res){
+          say "$entry->[REQ_DATA]";
           if(ref($entry->[REQ_DATA]) eq "ARRAY"){
             push @list, [$error,$family,$type,$protocol, $addr, $canonname]; 
           }
@@ -258,6 +265,14 @@ sub process_results{
         $entry->[REQ_CB](\@list);
       }
 
+
+    }
+    elsif($cmd==CMD_GNI){
+      DEBUG and say "<< GNI return from worker $entry->[REQ_WORKER]";
+      my ($error, $host, $port)=unpack "l> l>/A* l>/A*", $bin;
+      if($entry and $entry->[REQ_CB]){
+          $entry->[REQ_CB]([$error, $host, $port]);
+      }
 
     }
     elsif($cmd==CMD_SPAWN){
@@ -308,36 +323,35 @@ sub getaddrinfo{
 
     # Ensure hints is array ref
     #die "hints must be array" unless ref($hints) eq "ARRAY";
-
     # Ensure sane values for transmit
     my $ref=[];
     if(ref($hints) eq "ARRAY"){
-      $ref->[0]=$hints->[0]//0;
-      $ref->[1]=$hints->[1]//0;
-      $ref->[2]=$hints->[2]//0;
-      $ref->[3]=$hints->[3]//0;
-      $ref->[4]=$host;
-      $ref->[5]=$port;
+      push @$hints, $host, $port;
     }
     else {
-      $ref->[0]=$hints->{flags}//0;
-      $ref->[1]=$hints->{family}//0;
-      $ref->[2]=$hints->{type}//0;
-      $ref->[3]=$hints->{protocol}//0;
-      $ref->[4]=$host;
-      $ref->[5]=$port;
-
+      $hints->{host}=$host;
+      $hints->{port}=$port;
     }
+
 
     # add the request to the queue and to outstanding table
     my $worker=_get_worker;
-    my $req=[CMD_GAI, $i++, $ref, $cb, $worker->[WORKER_ID]];
+    my $req=[CMD_GAI, $i++, $hints, $cb, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
   }
 
   pool_next;
   #return true if outstanding requests
   scalar %reqs;
+}
+
+sub getnameinfo{
+  my ($addr, $flags, $cb)=@_;
+    my $worker=_get_worker;
+    my $req=[CMD_GNI, $i++, [$addr, $flags], $cb, $worker->[WORKER_ID]];
+    push $worker->[WORKER_QUEUE]->@*, $req;
+    scalar %reqs;
+  
 }
 
 
@@ -359,118 +373,120 @@ sub close_pool {
 }
 
 
-# If use as a script, we are a worker
-#
-unless(caller){
-
-  package main;
-  use v5.36;
-
-  # process any command line arguments for input and output FDs
-  my $run=1;
-  my @in_fds;
-  my @out_fds;
-  #say "Processing ARGV";
-  while(@ARGV){
-    local $_=shift;  
-    if(/--in/){
-        @in_fds=split ",", shift;
-        next;
-    }
-    if(/--out/){
-        @out_fds=split ",", shift;
-        next;
-    }
-  }
-  
-  Socket::More::Resolver::DEBUG and say STDERR "TEMPLATE: ins: @in_fds";
-  Socket::More::Resolver::DEBUG and say STDERR "TEMPLATE: outs: @out_fds";
-
-  # Pipes back to the API
-  #
-  open my $in,  "<&=$in_fds[0]" or die $!;
-  open my $out, ">&=$out_fds[0]" or die $!;
-  #$out->autoflush;
-
-  require Socket::More::Lookup;
-  #Simply loop over inputs and outputs
-  Socket::More::Resolver::DEBUG and say "Worker waiting for line ...";
-  while(<$in>){
-    Socket::More::Resolver::DEBUG and say "Worker got line...";
-    #parse
-    # Host, port, hints
-    chomp;  
-
-    my $bin=pack "H*", $_;
-    my ($cmd, $req_id)=unpack "l> l>", $bin;
-    $bin=substr $bin, 8;
-
-    Socket::More::Resolver::DEBUG and say "WORKER $$ REQUEST,  ID: $req_id";
-
-    my $return_out=pack "l> l>", $cmd, $req_id;
-    if($cmd == Socket::More::Resolver::CMD_SPAWN){
-      #Fork from me. Presumably the template
-      my $pid=fork;
-      if($pid){
-        #Parent
-        # return message back to API with PID of offspring 
-        Socket::More::Resolver::DEBUG and say "FORKED WORKER... in parent child is $pid";
-        $return_out.=pack "l>", $pid;
-        #syswrite $out, unpack("H*", pack "sss", $cmd, $req_id, $pid)."\n";
-      }
-      else {
-        #child.
-        Socket::More::Resolver::DEBUG and say "FORKED WORKER... child with fds";
-        my ($in_fd, $out_fd)=unpack "l> l>", $bin;
-        close $in;
-        close $out;
-        
-        Socket::More::Resolver::DEBUG and say "infd $in_fd, out_fd $out_fd";
-        open $in,  "<&=$in_fd" or die $!;
-        open $out, ">&=$out_fd" or die $!;
-
-        next; #Do not respond.
-      }
-
-    }
-    elsif($cmd== Socket::More::Resolver::CMD_GAI){
-      #Assume a request
-      my @e =unpack $gai_pack, $bin;
-      #say "inputs: @e";
-      my @results;
-      my $port=pop @e;
-      my $host=pop @e;
-      Socket::More::Resolver::DEBUG and say "WORKER $$ PROCESSIG GAI REQUEST, id: $req_id";
-      my $rc=Socket::More::Lookup::getaddrinfo($host, $port, \@e, \@results);
-      #say "Result code :$rc ";
-
-      if($rc!=0 and @results ==0){
-        $results[0]=[$rc, -1, -1, -1, "", ""];
-      }
-      #my $data=pack "s s", $cmd,$req_id;
-      for(@results){
-        $_->[0]= $rc;
-        $return_out.=pack($gai_data_pack, @$_);
-      }
-      #syswrite $out, unpack("H*", $data)."\n";
-    }
-    elsif($cmd==Socket::More::Resolver::CMD_KILL){
-      # worker needs to exit
-      # 
-      $run=undef;
-    }
-    else {
-      die "Unkown command";
-    }
-
-    Socket::More::Resolver::DEBUG and say "** BEFORE WORKER WRITE $$";
-    syswrite $out, unpack("H*", $return_out)."\n" or say $!;
-    Socket::More::Resolver::DEBUG and say "** AFTER WORKER WRITE $$";
-
-    last unless $run;
-  }
-
-  Socket::More::Resolver::DEBUG and say "** EXITING WORKER $$";
-}
+###############################################################################################
+# # If use as a script, we are a worker                                                       #
+# #                                                                                           #
+# unless(caller){                                                                             #
+#                                                                                             #
+#   package main;                                                                             #
+#   use v5.36;                                                                                #
+#                                                                                             #
+#   # process any command line arguments for input and output FDs                             #
+#   my $run=1;                                                                                #
+#   my @in_fds;                                                                               #
+#   my @out_fds;                                                                              #
+#   #say "Processing ARGV";                                                                   #
+#   while(@ARGV){                                                                             #
+#     local $_=shift;                                                                         #
+#     if(/--in/){                                                                             #
+#         @in_fds=split ",", shift;                                                           #
+#         next;                                                                               #
+#     }                                                                                       #
+#     if(/--out/){                                                                            #
+#         @out_fds=split ",", shift;                                                          #
+#         next;                                                                               #
+#     }                                                                                       #
+#   }                                                                                         #
+#                                                                                             #
+#   Socket::More::Resolver::DEBUG and say STDERR "TEMPLATE: ins: @in_fds";                    #
+#   Socket::More::Resolver::DEBUG and say STDERR "TEMPLATE: outs: @out_fds";                  #
+#                                                                                             #
+#   # Pipes back to the API                                                                   #
+#   #                                                                                         #
+#   open my $in,  "<&=$in_fds[0]" or die $!;                                                  #
+#   open my $out, ">&=$out_fds[0]" or die $!;                                                 #
+#   #$out->autoflush;                                                                         #
+#                                                                                             #
+#   require Socket::More::Lookup;                                                             #
+#   #Simply loop over inputs and outputs                                                      #
+#   Socket::More::Resolver::DEBUG and say "Worker waiting for line ...";                      #
+#   while(<$in>){                                                                             #
+#     Socket::More::Resolver::DEBUG and say "Worker got line...";                             #
+#     #parse                                                                                  #
+#     # Host, port, hints                                                                     #
+#     chomp;                                                                                  #
+#                                                                                             #
+#     my $bin=pack "H*", $_;                                                                  #
+#     my ($cmd, $req_id)=unpack "l> l>", $bin;                                                #
+#     $bin=substr $bin, 8;                                                                    #
+#                                                                                             #
+#     Socket::More::Resolver::DEBUG and say "WORKER $$ REQUEST,  ID: $req_id";                #
+#                                                                                             #
+#     my $return_out=pack "l> l>", $cmd, $req_id;                                             #
+#     if($cmd == Socket::More::Resolver::CMD_SPAWN){                                          #
+#       #Fork from me. Presumably the template                                                #
+#       my $pid=fork;                                                                         #
+#       if($pid){                                                                             #
+#         #Parent                                                                             #
+#         # return message back to API with PID of offspring                                  #
+#         Socket::More::Resolver::DEBUG and say "FORKED WORKER... in parent child is $pid";   #
+#         $return_out.=pack "l>", $pid;                                                       #
+#         #syswrite $out, unpack("H*", pack "sss", $cmd, $req_id, $pid)."\n";                 #
+#       }                                                                                     #
+#       else {                                                                                #
+#         #child.                                                                             #
+#         Socket::More::Resolver::DEBUG and say "FORKED WORKER... child with fds";            #
+#         my ($in_fd, $out_fd)=unpack "l> l>", $bin;                                          #
+#         close $in;                                                                          #
+#         close $out;                                                                         #
+#                                                                                             #
+#         Socket::More::Resolver::DEBUG and say "infd $in_fd, out_fd $out_fd";                #
+#         open $in,  "<&=$in_fd" or die $!;                                                   #
+#         open $out, ">&=$out_fd" or die $!;                                                  #
+#                                                                                             #
+#         next; #Do not respond.                                                              #
+#       }                                                                                     #
+#                                                                                             #
+#     }                                                                                       #
+#     elsif($cmd== Socket::More::Resolver::CMD_GAI){                                          #
+#       #Assume a request                                                                     #
+#       my @e =unpack $gai_pack, $bin;                                                        #
+#       #say "inputs: @e";                                                                    #
+#       my @results;                                                                          #
+#       my $port=pop @e;                                                                      #
+#       my $host=pop @e;                                                                      #
+#       Socket::More::Resolver::DEBUG and say "WORKER $$ PROCESSIG GAI REQUEST, id: $req_id"; #
+#       my $rc=Socket::More::Lookup::getaddrinfo($host, $port, \@e, \@results);               #
+#       #say "Result code :$rc ";                                                             #
+#                                                                                             #
+#       if($rc!=0 and @results ==0){                                                          #
+#         $results[0]=[$rc, -1, -1, -1, "", ""];                                              #
+#       }                                                                                     #
+#       #my $data=pack "s s", $cmd,$req_id;                                                   #
+#       for(@results){                                                                        #
+#         $_->[0]= $rc;                                                                       #
+#         $return_out.=pack($gai_data_pack, @$_);                                             #
+#       }                                                                                     #
+#       #syswrite $out, unpack("H*", $data)."\n";                                             #
+#     }                                                                                       #
+#     elsif($cmd==Socket::More::Resolver::CMD_KILL){                                          #
+#       # worker needs to exit                                                                #
+#       #                                                                                     #
+#       $run=undef;                                                                           #
+#     }                                                                                       #
+#     else {                                                                                  #
+#       die "Unkown command";                                                                 #
+#     }                                                                                       #
+#                                                                                             #
+#     Socket::More::Resolver::DEBUG and say "** BEFORE WORKER WRITE $$";                      #
+#     syswrite $out, unpack("H*", $return_out)."\n" or say $!;                                #
+#     Socket::More::Resolver::DEBUG and say "** AFTER WORKER WRITE $$";                       #
+#                                                                                             #
+#     last unless $run;                                                                       #
+#   }                                                                                         #
+#                                                                                             #
+#   Socket::More::Resolver::DEBUG and say "** EXITING WORKER $$";                             #
+# }                                                                                           #
+###############################################################################################
 
 1;
