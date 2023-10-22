@@ -2,7 +2,7 @@ package Socket::More::Resolver;
 use v5.36;
 no warnings "experimental";
 
-use constant::more DEBUG=>0;
+use constant::more DEBUG=>1;
 
 use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL>;
 use constant::more qw<WORKER_ID=0 WORKER_READ WORKER_WRITE WORKER_QUEUE WORKER_BUSY>;
@@ -41,6 +41,10 @@ my @pairs;        # file handles for parent/child pipes
 my $template_pid;
 my $template_worker;
 
+my $event_data;
+my $has_event_loop;
+my %fd_worker_map;
+
 sub import {
   # options include 
   #   pool size
@@ -63,7 +67,6 @@ sub import {
   return if @pairs;
 
   # Detect event system
-
   #pre allocate enough pipes for full pool
   for(1..$pool_max){
     pipe my $c_read, my $p_write;
@@ -73,13 +76,6 @@ sub import {
 
     push @pairs,[$p_read, $p_write, $c_read, $c_write]; 
 
-    #TODO: add a event watcher for reading from the child -> parent pipe
-    # Need to detect event system, or assume the one specified
-    #
-    # Detection goes here
-    # Then simply call internal loop
-    #   AE::io $p_read, 0, \&getaddrinfosub;
-    #
   }
 
   
@@ -96,7 +92,26 @@ sub import {
     # parent
     #
     $template_worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
+    $fd_worker_map{fileno $parent_read}=$template_worker;
     push @pool_free, $pid;
+
+    #TODO: add a event watcher for reading from the child -> parent pipe
+    # Need to detect event system, or assume the one specified
+    #
+    # Detection goes here
+    # Then simply call internal loop
+    #   AE::io $p_read, 0, \&getaddrinfosub;
+    #
+    if(%AnyEvent::){
+      DEBUG and say "FOUND ANYEVENT";
+      $has_event_loop=1;
+      for(@pairs){
+        my $in_fd=fileno $_->[0];
+        push @$event_data, AE::io($_->[0], 0, sub {
+          process_results $fd_worker_map{$in_fd};
+        });
+      }
+    }
   }
   else {
     # child
@@ -157,7 +172,7 @@ sub _get_worker{
 sub pool_next{
 
   # handle returns first .. TODO: This is only if no event system is being used
-  results_available;
+  results_available unless $has_event_loop;
 
   for(values %pool){
     DEBUG and say "POOL next for ".$_->[WORKER_ID]." busy: $_->[WORKER_BUSY], queue; $_->[WORKER_QUEUE]";
@@ -281,7 +296,8 @@ sub process_results{
       my $pid=unpack "l>", $bin;
       unshift @pool_free, $pid;
       my ($parent_read, $parent_write, $child_read, $child_write)=$pairs[$p++]->@*;
-      $pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
+      my $worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
+      $fd_worker_map{fileno $parent_read}=$worker;
 
       DEBUG and say "<< SPAWN RETURN FROM TEMPLATE $entry->[REQ_WORKER]: new worker $pid";
     }
@@ -291,6 +307,8 @@ sub process_results{
       delete $pool{$id};
       @pool_free=grep $_ != $id, @pool_free;
     }
+
+    pool_next if $has_event_loop;
 }
 
 sub results_available {
@@ -350,6 +368,7 @@ sub getnameinfo{
     my $worker=_get_worker;
     my $req=[CMD_GNI, $i++, [$addr, $flags], $cb, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
+    pool_next;
     scalar %reqs;
   
 }
