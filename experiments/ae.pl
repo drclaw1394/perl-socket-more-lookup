@@ -5,9 +5,9 @@ use Data::Dumper;
 
 my $timer;
 my $addr;
+my $sub=sub { say Dumper @_};
 $timer=AE::timer 0, 0.01, sub {
-
-  getaddrinfo("rmbp.local", 80, {}, sub { say Dumper @_});
+  getaddrinfo("rmbp.local", 80, {}, $sub);
 
 };
 

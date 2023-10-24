@@ -101,7 +101,8 @@ unless(caller){
       else {
         require Socket::More::Lookup;
         $rc=Socket::More::Lookup::getaddrinfo($host, $port, \@e, \@results);
-
+        #$rc=1;
+        #@results=();
         if($rc!=0 and @results ==0){
           $results[0]=[$rc, -1, -1, -1, "", ""];
         }

@@ -160,19 +160,19 @@ getaddrinfo(hostname, servicename, hints, results)
           return_av=false;
           hv=(HV *)SvRV(hints);
           temp=hv_fetch(hv,"flags",5,1);
-          if((temp != NULL ) &&SvIOK(*temp)){
+          if((temp != NULL ) && SvIOK(*temp)){
             h.ai_flags = SvIV(*temp);
           }
           temp=hv_fetch(hv,"family",6,1);
-          if((temp != NULL ) &&SvIOK(*temp)){
+          if((temp != NULL ) && SvIOK(*temp)){
             h.ai_family = SvIV(*temp);
           }
           temp=hv_fetch(hv,"type",4,1);
-          if((temp != NULL ) &&SvIOK(*temp)){
+          if((temp != NULL ) && SvIOK(*temp)){
             h.ai_socktype = SvIV(*temp);
           }
           temp=hv_fetch(hv,"protocol",8,1);
-          if((temp != NULL ) &&SvIOK(*temp)){
+          if((temp != NULL ) && SvIOK(*temp)){
             h.ai_protocol = SvIV(*temp);
           }
           hh=&h;
@@ -226,9 +226,8 @@ getaddrinfo(hostname, servicename, hints, results)
           }
           //Push results to return stack
           next=next->ai_next;
-          av_store(results,i,newRV((SV *)a));
+          av_store(results, i, newRV_noinc((SV *)a));
           i++;
-
         }
       }
       else {
@@ -248,17 +247,12 @@ getaddrinfo(hostname, servicename, hints, results)
 
           //Push results to return stack
           next=next->ai_next;
-          av_store(results,i,newRV((SV *)h));
+          av_store(results,i,newRV_noinc((SV *)h));
           i++;
 
         }
       }
       freeaddrinfo(res);
-
-
-
-
-
       XSRETURN_IV(1);
     }
 

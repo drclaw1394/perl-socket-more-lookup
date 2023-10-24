@@ -1,0 +1,133 @@
+=head1 NAME
+
+Socket::More::Resolver - Asynchronous DNS resolving
+
+=head1 SYNOPSIS
+
+Automatic Event Loop Integration and support
+
+  use v5.36;
+
+  use AnyEvent; # or EV, IO::Async
+
+  use Socket::More::Resolver; 
+  
+  getaddrinfo("www.google.com", 0, {},
+    sub {
+      # got results
+    },
+    sub {
+      # got an error
+      say gai_strerror $_[0];
+    }
+
+
+  # Normal Event loop setup
+  my $cv=AE::cv;
+  $cv->recv;
+
+=head1 DESCRIPTION
+
+An asynchronous DNS resolution package use your platforms C<getaddrinfo>  and
+C<getnameinfo> routines. Automatically integrates into supported event loops
+and also provides a polling (non blocking) API.
+
+Unlike the same named routines in core the L<Socket> module, results and errors
+are reported back via callbacks and not return values.
+
+Also the C<getaddrinfo> routine supports array 'struct' fields for hints.
+Results will also be returned in this format instead of a has when used.
+
+When integrated with
+event loops these are executed in a asynchronous manner
+
+Uses pure Perl unless L<Socket::More::Lookup> in available, (part of
+L<Socket::More>). In this case the lookup routines are used from that module
+(less memory, faster).
+
+=head1 USAGE
+
+
+
+=head2 Importing
+
+The resolver can be imported with
+
+  use MY::EVENT::LOOP::OF::CHOICE;
+  use Socket::More::Resolver;
+
+This will automatically start the worker pool, if it hasn't already been
+started and automatically integrate with your event loop.
+
+If you would like to assert the event loop to use, or the max size of the
+worker pool, these are set via import arguments
+
+  use Socket::More::Resolver max_worker=>x, event_loop=>"package_name", prefill=>1;
+
+=over
+
+=item max_worker
+
+This item sets the maximum number of workers to spawn. The default is 4.
+
+=item event_loop
+
+The package name, as a string, indicating which event loop you want to
+integrate into, instead of autodetecting one:
+
+  event_loop=>"AnyEvent"
+
+Alternatively, this can be a subroutine, is called for each read fd requiring
+monitoring. It is passed the fd, and the subroutine reference to execute when
+readable. Any value returned is stored internally to keep the 'watcher active'
+
+
+    # eg for AnyEvent
+
+    event_loop=>sub {
+      my ($fd,$sub)=@_;  
+        AE::io $fd, 0 , $sub;
+      }
+
+
+=head2 API
+
+
+
+=head2 Supported Event Loops
+
+=over
+
+=item AnyEvent
+
+=back
+
+=head1 How it works (High Level)
+
+When the L<Socket::More::Resolver> package is loaded for the first time, it
+initialises a pool of pipes to be used by workers.  The first worker, also used
+as a templates process, is spawned (forked and exec) into the
+L<Socket::More::Resolver::Worker>.
+
+Detection of the event system is performed in the parent process, and read
+monitoring in setup on the 
+
+Subsequent importing of the
+module does not load additional.
+
+
+
+
+
+
+
+=head1 COMPARISION TO OTHER MODULES
+
+L<Net::DNS::Native>
+
+  Use Internal threads
+  Awkward interface for integration into event loop
+  Returns file handles for each resolution request
+
+
+  

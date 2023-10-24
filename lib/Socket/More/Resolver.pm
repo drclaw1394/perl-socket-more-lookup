@@ -50,6 +50,9 @@ sub import {
   #   pool size
   #   preallocate
   #
+  my $_p=shift;
+  my %options=@_;
+  
   # Roll our own exporter for low memory and to preallocate pipes
   my $package=caller;
   Socket::More::Resolver::DEBUG and say "CALLER IS $package";
@@ -102,14 +105,51 @@ sub import {
     # Then simply call internal loop
     #   AE::io $p_read, 0, \&getaddrinfosub;
     #
-    if(%AnyEvent::){
-      DEBUG and say "FOUND ANYEVENT";
-      $has_event_loop=1;
-      for(@pairs){
-        my $in_fd=fileno $_->[0];
-        push @$event_data, AE::io($_->[0], 0, sub {
-          process_results $fd_worker_map{$in_fd};
-        });
+    my $event_loop=$options{event_loop};
+    if(ref($event_loop) eq "CODE"){
+        # use as a callback to generate watcher for the fds we need
+        #$event_loop->{
+    }
+    else {
+      unless($event_loop){
+        # Auto detect supported loops
+        my @known_loops=qw<AnyEvent IO::Async>;
+        no strict "refs";
+        for(@known_loops){
+          $event_loop=$_ if eval "%".$_."::";
+          last if $event_loop;
+        }
+      }
+
+      say "EVENT LOOP IS: $event_loop";
+      if($event_loop eq "AnyEvent"){
+        DEBUG and say "FOUND ANYEVENT";
+        $has_event_loop=1;
+        for(@pairs){
+          my $in_fd=fileno $_->[0];
+          push @$event_data, AE::io($_->[0], 0, sub {
+            process_results $fd_worker_map{$in_fd};
+          });
+        }
+      }
+      elsif($event_loop eq "IO::Async"){
+        DEBUG and say "FOUND IO::Async";
+        $has_event_loop=1;
+        for(@pairs){
+          require IO::Async::Handle;
+          my $fh=$_->[0];
+          push @$event_data,
+            IO::Async::Handle->new(
+              read_handle=>$fh,
+              on_read_ready=> sub {
+                my $in_fd=fileno $fh;
+                process_results $fd_worker_map{$in_fd};
+            }
+          )
+        }
+      }
+      else {
+        # No supported event loop found
       }
     }
   }
@@ -337,7 +377,7 @@ sub getaddrinfo{
   if( @_ !=0){
 
 
-    my ($host, $port, $hints, $cb)=@_;
+    my ($host, $port, $hints, $on_result, $on_error)=@_;
 
     # Ensure hints is array ref
     #die "hints must be array" unless ref($hints) eq "ARRAY";
@@ -354,7 +394,7 @@ sub getaddrinfo{
 
     # add the request to the queue and to outstanding table
     my $worker=_get_worker;
-    my $req=[CMD_GAI, $i++, $hints, $cb, $worker->[WORKER_ID]];
+    my $req=[CMD_GAI, $i++, $hints, $on_result, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
   }
 
@@ -364,13 +404,12 @@ sub getaddrinfo{
 }
 
 sub getnameinfo{
-  my ($addr, $flags, $cb)=@_;
+  my ($addr, $flags, $on_result)=@_;
     my $worker=_get_worker;
-    my $req=[CMD_GNI, $i++, [$addr, $flags], $cb, $worker->[WORKER_ID]];
+    my $req=[CMD_GNI, $i++, [$addr, $flags], $on_result, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
     pool_next;
     scalar %reqs;
-  
 }
 
 
