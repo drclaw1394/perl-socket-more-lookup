@@ -12,13 +12,12 @@ sub import {
   return if $_shared;
 
   $_shared=1;
+  $Socket::More::Resolver::Shared=$_shared;
   _add_to_loop;
 
 }
 
 sub _add_to_loop {
-  my $self = shift;
-  my ( $loop ) = @_;
 
   # Code here to set up event handling on $loop that may be required
   my @fh=Socket::More::Resolver::to_watch;

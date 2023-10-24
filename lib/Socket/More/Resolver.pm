@@ -115,7 +115,7 @@ sub import {
       # Otherwise represents a package name (postfix)
       unless($event_loop){
         # Auto detect supported loops
-        my @known_loops=qw<AE IO::Async>;
+        my @known_loops=qw<AE IO::Async Mojo::IOLoop>;
 
         no strict "refs";
         for(@known_loops){
