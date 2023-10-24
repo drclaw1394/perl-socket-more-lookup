@@ -65,6 +65,13 @@ worker pool, these are set via import arguments
   use Socket::More::Resolver max_worker=>x, event_loop=>"package_name", prefill=>1;
 
 =over
+=item no_export
+
+  no_export=>1
+
+When set to a true value, prevents the exporting of symbols into the target
+namespace. Useful when making a wrapper class/driver for event loops that want
+to use the same names
 
 =item max_worker
 
