@@ -5,6 +5,7 @@ use Socket::More::Resolver ();
 sub _add_to_loop;
 
 my $_shared;
+my $_timer;
 my @watchers;
 
 sub import {
@@ -29,6 +30,9 @@ sub _add_to_loop {
     };
     push @watchers,$w;
   }
+  
+  #setup timer to monitor child existance
+  #$timer=AE::timer 1, 1, \&Socket::More::Resolver::monitor_workers;
 }
  
 sub _remove_from_loop {

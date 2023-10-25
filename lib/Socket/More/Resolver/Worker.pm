@@ -12,7 +12,7 @@ unless(caller){
   my $run=1;
   my @in_fds;
   my @out_fds;
-  my $use_core;#=1;
+  my $use_core;#=1;#=1;
   #say "Processing ARGV";
   while(@ARGV){
     local $_=shift;  

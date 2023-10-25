@@ -11,7 +11,6 @@ my $_shared;
 my @watchers;
 
 
-sub new;
 
 #import actually creates a shared object if it doesn't exist
 sub import {
@@ -21,7 +20,7 @@ sub import {
   $_shared=1;
   # Set the package variable
   $Socket::More::Resolver::Shared=$_shared;
-  _add_to_loop
+  _add_to_loop;
 }
 
 
@@ -33,16 +32,6 @@ sub getaddrinfo{
 sub getnameinfo{
   my $self=shift;
   &Socket::More::Resolver::getnameinfo;
-}
-
-sub new {
-  my $package=shift;
-  return $_shared if $_shared;
-  
-  # 
-  my $self=bless {}, $package;
-  $self->{watchers}=[];
-  $self;
 }
 
 sub _add_to_loop {

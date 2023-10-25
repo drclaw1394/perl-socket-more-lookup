@@ -31,7 +31,7 @@ my %reqs;   # Outstanding requests
 
 my %pool;           # workers stored by pid
 my @pool_free;      # pids (keys) of workers we can use
-my $pool_max=5;
+my $pool_max=4;
 my $busy_count=0;
 
 
@@ -130,36 +130,8 @@ sub import {
         eval "require Socket::More::Resolver::$_" or die "Event loop failed $_";
 
         "Socket::More::Resolver::$_"->import;
-        #say "Event loop ok $_";
         $has_event_loop=1;
-
-        ############################################
-        # if(/AnyEvent/ or /AE/){                  #
-        #   require Socket::More::Resolver::AE;    #
-        #   Socket::More::Resolver::AE->import;    #
-        # }                                        #
-        # elsif(/IO::Async/){                      #
-        #   require Socket::More::Resolver::Async; #
-        #   Socket::More::Resolver::Async->import; #
-        # }                                        #
-        ############################################
       }
-      ###################################################
-      # say "EVENT LOOP IS: $event_loop";               #
-      # if($event_loop eq "AnyEvent"){                  #
-      #   DEBUG and say "FOUND ANYEVENT";               #
-      #   $has_event_loop=1;                            #
-      #   for(@pairs){                                  #
-      #     my $in_fd=fileno $_->[0];                   #
-      #     push @$event_data, AE::io($_->[0], 0, sub { #
-      #       process_results $fd_worker_map{$in_fd};   #
-      #     });                                         #
-      #   }                                             #
-      # }                                               #
-      # else {                                          #
-      #   # No supported event loop found               #
-      # }                                               #
-      ###################################################
     }
   }
   else {
@@ -262,7 +234,7 @@ sub pool_next{
       else {
         # assume a hash
         for($req->[REQ_DATA]){
-          $out.=pack $gai_pack, $_->{flags}//0, $_->{family}//0, $_->{type}//0, $_->{protocol}//0, $_->{host}, $_->{port};
+          $out.=pack $gai_pack, $_->{flags}//0, $_->{family}//0, $_->{socktype}//0, $_->{protocol}//0, $_->{host}, $_->{port};
         }
       }
 
@@ -331,7 +303,7 @@ sub process_results{
             push @list, [$error,$family,$type,$protocol, $addr, $canonname]; 
           }
           else {
-            push @list, {family=>$family, type=>$type, protocol=>$protocol, addr=>$addr, canonname=>$canonname};
+            push @list, {family=>$family, socktype=>$type, protocol=>$protocol, addr=>$addr, canonname=>$canonname};
           }
         }
         $entry->[REQ_CB](\@list);
@@ -448,5 +420,20 @@ sub to_watch {
     map $_->[0], @pairs
 }
 
+sub monitor_workers {
+  use POSIX ":sys_wait_h"; 
+      # See if any children have exited or been killed.
+      # Reap them
+      # Re spawn them
+      my $pid;
+      do{ 
+        $pid=waitpid -1, WNOHANG;
+        if($pid>0){
+          # Found a dead worker Respawn, 
+          # Scan the pending requests previously allocated
+
+        }
+      } while ($pid>0);
+}
 
 1;

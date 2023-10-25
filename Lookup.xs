@@ -167,7 +167,7 @@ getaddrinfo(hostname, servicename, hints, results)
           if((temp != NULL ) && SvIOK(*temp)){
             h.ai_family = SvIV(*temp);
           }
-          temp=hv_fetch(hv,"type",4,1);
+          temp=hv_fetch(hv,"socktype",8,1);
           if((temp != NULL ) && SvIOK(*temp)){
             h.ai_socktype = SvIV(*temp);
           }
@@ -234,7 +234,7 @@ getaddrinfo(hostname, servicename, hints, results)
         while(next){
           h=newHV();
           hv_store(h, "family", 6, newSViv(next->ai_family), 0);
-          hv_store(h, "type", 4, newSViv(next->ai_socktype), 0);
+          hv_store(h, "socktype", 8, newSViv(next->ai_socktype), 0);
           hv_store(h, "protocol", 8, newSViv(next->ai_protocol), 0);
           hv_store(h, "addr", 4, newSVpv((char *)(next->ai_addr), next->ai_addrlen), 0);
           if(next->ai_canonname == NULL){
