@@ -4,7 +4,7 @@ unless(caller){
   my $gai_pack="($gai_data_pack)*";
 
   package main;
-  use constant::more DEBUG=>0;
+  use constant::more DEBUG=>1;
   use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL>;
   use v5.36;
 
@@ -103,12 +103,12 @@ unless(caller){
         $rc=Socket::More::Lookup::getaddrinfo($host, $port, \@e, \@results);
         #$rc=1;
         #@results=();
-        if($rc!=0 and @results ==0){
-          $results[0]=[$rc, -1, -1, -1, "", ""];
+        unless (defined $rc){
+          $results[0]=[$!, -1, -1, -1, "", ""];
         }
 
         for(@results){
-          $_->[0]= $rc;
+          $_->[0]= 0;
           $return_out.=pack($gai_data_pack, @$_);
         }
       }

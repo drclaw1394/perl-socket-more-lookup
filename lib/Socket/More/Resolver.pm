@@ -5,7 +5,7 @@ no warnings "experimental";
 use constant::more DEBUG=>0;
 
 use constant::more qw<CMD_GAI=0   CMD_GNI   CMD_SPAWN   CMD_KILL>;
-use constant::more qw<WORKER_ID=0 WORKER_READ   WORKER_WRITE  WORKER_QUEUE  WORKER_BUSY>;
+use constant::more qw<WORKER_ID=0 WORKER_READ   WORKER_WRITE  WORKER_CREAD WORKER_CWRITE WORKER_QUEUE  WORKER_BUSY>;
 use constant::more qw<REQ_CMD=0   REQ_ID  REQ_DATA  REQ_CB  REQ_WORKER>;
 
 use Fcntl;
@@ -16,10 +16,7 @@ my $gai_data_pack="l> l> l> l> l>/A* l>/A*";
 #
 my $gai_pack="($gai_data_pack)*";
 
-my $k=0;    # Number of Workers in 'flight' or active
-            #
 
-my $p=0;    # Worker index on return of spawn?
 
 sub results_available;
 sub process_results;
@@ -39,7 +36,6 @@ my @pairs;        # file handles for parent/child pipes
                   # preallocated with first import of this module
 
 my $template_pid;
-my $template_worker;
 
 our $Shared;
 my $has_event_loop;
@@ -74,7 +70,6 @@ sub import {
 
   $pool_max=($options{max_workers}//4);
 
-  # Detect event system
   #pre allocate enough pipes for full pool
   for(1..$pool_max){
     pipe my $c_read, my $p_write;
@@ -82,72 +77,14 @@ sub import {
     fcntl $c_read, F_SETFD, 0;  #Make sure we clear CLOSEXEC
     fcntl $c_write, F_SETFD,0;
 
-    push @pairs,[$p_read, $p_write, $c_read, $c_write]; 
-
+    push @pairs,[0, $p_read, $p_write, $c_read, $c_write, [], 0]; 
   }
 
   
   # Create the template process here. This is the first worker
   #Need to bootstrap/ create the first worker, which is used as a template
   DEBUG and say STDERR "Create worker: Bootrapping  first/template worker"; 
-
-  my ($parent_read, $parent_write, $child_read, $child_write)=$pairs[$p++]->@*;
-  $k++;
-  my $pid=fork; 
-  $template_pid=$pid;
-
-  if($pid){
-    # parent
-    #
-    $template_worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
-    $fd_worker_map{fileno $parent_read}=$template_worker;
-    push @pool_free, $pid;
-
-    #TODO: add a event watcher for reading from the child -> parent pipe
-    # Need to detect event system, or assume the one specified
-    #
-    # Detection goes here
-    my $event_loop=$options{event_loop};
-    if(ref($event_loop) eq "CODE"){
-        &$event_loop;
-    }
-    else {
-      # Otherwise represents a package name (postfix)
-      unless($event_loop){
-        # Auto detect supported loops
-        my @known_loops=qw<AE IO::Async Mojo::IOLoop>;
-
-        no strict "refs";
-        for(@known_loops){
-          $event_loop=$_ if eval "%".$_."::";
-          last if $event_loop;
-        }
-      }
-
-      # Attempt to require and import the driver
-
-      for($event_loop){
-        eval "require Socket::More::Resolver::$_" or die "Event loop failed $_";
-
-        "Socket::More::Resolver::$_"->import;
-        $has_event_loop=1;
-      }
-    }
-  }
-  else {
-    # child
-    # exec an tell the process which fileno we want to communicate on
-    close $parent_write;
-    close $parent_read;
-    my @ins=map {fileno $_->[2]} @pairs;  # Child read end
-    my @outs=map {fileno $_->[3]} @pairs; # Child write end
-    DEBUG and say STDERR "Create worker: exec with ins: @ins";
-    DEBUG and say STDERR "Create worker: exec with outs: @outs";
-    my $file=__FILE__; 
-    $file=~s|\.pm|/Worker.pm|;
-    local $"=",";
-    exec $^X, $file, "--in", "@ins", "--out", "@outs";
-  }
+  spawn_template();
   1; 
 }
 
@@ -172,20 +109,24 @@ sub _get_worker{
 
     if($busy_count >= @pool_free){
       # see if we can allocate another worker
-      DEBUG and say STDERR "get worker:  busy_count at >= \@pool_free";
+      DEBUG and say STDERR "get worker:  busy_count: $busy_count  >= \@pool_free:  ".@pool_free;
       # No free workers, do we create another?
-      if($k < $pool_max){
+      if(@pool_free < $pool_max){
         DEBUG and say STDERR "get worker:  sending to spawn new worker";
-        # unshift to ensure this is processed sooner
-        unshift $template_worker->[WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $k];#scalar(keys %pool) ];
-        $k++;
+
+        my $template_worker=spawn_template(); #ensure template exists
+      
+        for my $index (1..$#pairs){
+          unshift $template_worker->[WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $index];
+        }
       }
     }
     
     # Round robin schedule  into existing worker pool
-    my $worker_id=shift @pool_free;
-    push @pool_free, $worker_id;
-    $pool{$worker_id};
+    my $worker_index=shift @pool_free;
+    say "WORKER INDEX $worker_index";
+    push @pool_free, $worker_index;
+    $pairs[$worker_index];
 }
 
 
@@ -195,10 +136,11 @@ sub pool_next{
   # handle returns first .. TODO: This is only if no event system is being used
   results_available unless $has_event_loop;
 
-  for(values %pool){
+  for(@pairs){
     DEBUG and say "POOL next for ".$_->[WORKER_ID]." busy: $_->[WORKER_BUSY], queue; $_->[WORKER_QUEUE]";
     my $ofd;
-    # only process worker if  not busy and  have something to process
+    # only process worker is initialized  not busy and  have something to process
+    next unless $_->[WORKER_ID];
     next if $_->[WORKER_BUSY];
     next unless $_->[WORKER_QUEUE]->@*;
 
@@ -219,11 +161,11 @@ sub pool_next{
         # Write to template process
         DEBUG and say ">> SENDING CMD_SPWAN TO WORKER: $req->[REQ_WORKER]";
         my $windex=$req->[2];
-        my $cread=fileno $pairs[$windex][2];
-        my $cwrite=fileno $pairs[$windex][3];
+        my $cread=fileno $pairs[$windex][WORKER_CREAD];
+        my $cwrite=fileno $pairs[$windex][WORKER_CWRITE];
 
         $out.=pack("l> l>", $cread, $cwrite);
-        $ofd=$pairs[0][1];
+        $ofd=$pairs[0][WORKER_WRITE];
     }
     elsif($req->[REQ_CMD]==CMD_GAI) {
       # getaddrinfo request
@@ -272,6 +214,7 @@ sub process_results{
   else{
     $worker=$fd_worker_map{$fd_or_struct};
   }
+  say "PROCESS RESULTS";
   #Check which worker is ready to read.
   # Read the result
   #For now we wait.
@@ -323,18 +266,23 @@ sub process_results{
       # response from template fork. Add the worker to the pool
       # 
       my $pid=unpack "l>", $bin;
-      unshift @pool_free, $pid;
-      my ($parent_read, $parent_write, $child_read, $child_write)=$pairs[$p++]->@*;
-      my $worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
-      $fd_worker_map{fileno $parent_read}=$worker;
+      my $index=$entry->[2];  #
+      unshift @pool_free, $index;
+      my $worker=$pairs[$index];
+      $worker->[WORKER_ID]=$pid;
+      #$pool{$pid}=$worker;
+      $fd_worker_map{fileno $worker->[WORKER_READ]}=$worker;
+      #my ($parent_read, $parent_write, $child_read, $child_write)=$pairs[$index]->@*;
+      #my $worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
+      #$fd_worker_map{fileno $parent_read}=$worker;
 
       DEBUG and say "<< SPAWN RETURN FROM TEMPLATE $entry->[REQ_WORKER]: new worker $pid";
     }
     elsif($cmd == CMD_KILL){
       my $id=$entry->[REQ_WORKER];
       DEBUG and say "<< KILL RETURN FROM WORKER: $id : $worker->[WORKER_ID]";
-      delete $pool{$id};
-      @pool_free=grep $_ != $id, @pool_free;
+      #delete $pool{$id};
+      @pool_free=grep $pairs[$_]->[WORKER_ID] != $id, @pool_free;
     }
 
     pool_next if $has_event_loop;
@@ -345,16 +293,16 @@ sub results_available {
   DEBUG and say "CHECKING IF ReSULTS AVAILABLE";
   # Check if any workers are ready to talk 
   my $bits="";
-  for(values %pool){
-    vec($bits,  fileno($_->[WORKER_READ]),1)=1;
+  for(@pairs){
+    vec($bits,  fileno($_->[WORKER_READ]),1)=1 if $_->[WORKER_ID];
   }
 
   my $count=select $bits, undef, undef, $timeout;
 
   if($count>0){
     #say "COUNT: $count";
-    for(values %pool){
-      if(vec($bits, fileno($_->[WORKER_READ]), 1)){
+    for(@pairs){
+      if($_->[WORKER_ID] and vec($bits, fileno($_->[WORKER_READ]), 1)){
         process_results $_;
       }
     }
@@ -363,6 +311,8 @@ sub results_available {
 }
 
 sub getaddrinfo{
+  say "";
+  say "GETADDRINFO====";
   if( @_ !=0){
 
 
@@ -402,13 +352,13 @@ sub getnameinfo{
 }
 
 sub close_pool {
-  # all worker pids, with template last
-  my @pids=grep $_ != $template_pid, @pool_free;#keys %pool;
-  #push @pids, $template_pid;
+
+  my @indexes=1..$#pairs;
+  push @indexes, 0;
 
   #generate messages to close
-  for(@pids){
-    my $worker=$pool{$_};
+  for(@indexes){
+    my $worker=$pairs[$_];
     my $req=[CMD_KILL, $i++, [], undef, $_];
     push $worker->[WORKER_QUEUE]->@*, $req;
     pool_next;
@@ -417,7 +367,7 @@ sub close_pool {
 
 # return the parent side reading filehandles. This is what is needed for event loops
 sub to_watch {
-    map $_->[0], @pairs
+    map $_->[WORKER_READ], @pairs;
 }
 
 sub monitor_workers {
@@ -431,9 +381,63 @@ sub monitor_workers {
         if($pid>0){
           # Found a dead worker Respawn, 
           # Scan the pending requests previously allocated
+          my $dead=$fd_worker_map{$pid};
+          
+          # remove from pool
+          #delete $pool{$pid};
+
+          # TODO: what if it was the template process?           
+          $dead
 
         }
       } while ($pid>0);
 }
 
+sub cleanup_worker {
+  #remove from pool
+
+  # Remove from free
+
+  # Work with outstanding messages
+}
+
+sub spawn_worker {
+  # Iterate through slots to find a defunct worker
+  
+  # if the templates process is defunct spawn it as a special case
+
+}
+
+sub spawn_template {
+  # This should only be called when modules is first loaded, or when an
+  # external force has killed the template process
+  my $worker=$pairs[0];
+  return $worker if $worker->[WORKER_ID];
+
+  my $pid=fork; 
+  if($pid){
+    # parent
+    #
+    $worker->[WORKER_ID]=$pid;
+    #$pool{$pid}=$worker;
+    $fd_worker_map{fileno $worker->[WORKER_READ]}=$worker;
+    push @pool_free, 0;
+    $worker;
+
+  }
+  else {
+    # child
+    # exec an tell the process which fileno we want to communicate on
+    close $worker->[WORKER_READ];
+    close $worker->[WORKER_WRITE];
+    my @ins=map {fileno $_->[WORKER_CREAD]} @pairs;  # Child read end
+    my @outs=map {fileno $_->[WORKER_CWRITE]} @pairs; # Child write end
+    DEBUG and say STDERR "Create worker: exec with ins: @ins";
+    DEBUG and say STDERR "Create worker: exec with outs: @outs";
+    my $file=__FILE__; 
+    $file=~s|\.pm|/Worker.pm|;
+    local $"=",";
+    exec $^X, $file, "--in", "@ins", "--out", "@outs";
+  }
+}
 1;
