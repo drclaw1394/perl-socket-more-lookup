@@ -24,12 +24,13 @@ sub getaddrinfo;
 
 my $i=0;    # Sequential ID of requests
 
-my %reqs;   # Outstanding requests
+my $in_flight=0;
+
+#my %reqs;   # Outstanding requests
 
 my %pool;           # workers stored by pid
 my @pool_free;      # pids (keys) of workers we can use
 my $pool_max=4;
-my $busy_count=0;
 
 
 my @pairs;        # file handles for parent/child pipes
@@ -38,9 +39,11 @@ my @pairs;        # file handles for parent/child pipes
 my $template_pid;
 
 our $Shared;
-my $has_event_loop;
 
 my %fd_worker_map;
+
+
+
 
 sub import {
   # options include 
@@ -62,8 +65,6 @@ sub import {
     *{$package."::getnameinfo"}=\&getnameinfo;
     *{$package."::close_pool"}=\&close_pool;
   }
-
-
   
   # Don't generate pairs if they already exist
   return if @pairs;
@@ -85,6 +86,16 @@ sub import {
   #Need to bootstrap/ create the first worker, which is used as a template
   DEBUG and say STDERR "Create worker: Bootrapping  first/template worker"; 
   spawn_template();
+
+  # Prefork
+  if(1 or $options{prefork}){ 
+    for(1..($pool_max-1)){
+        unshift $pairs[0][WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $_];
+        $in_flight++;
+    }
+  }
+
+
   1; 
 }
 
@@ -107,26 +118,67 @@ sub import {
 # 
 sub _get_worker{
 
-    if($busy_count >= @pool_free){
-      # see if we can allocate another worker
-      DEBUG and say STDERR "get worker:  busy_count: $busy_count  >= \@pool_free:  ".@pool_free;
-      # No free workers, do we create another?
-      if(@pool_free < $pool_max){
-        DEBUG and say STDERR "get worker:  sending to spawn new worker";
-
-        my $template_worker=spawn_template(); #ensure template exists
-      
-        for my $index (1..$#pairs){
-          unshift $template_worker->[WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $index];
+    my $worker;
+    my $fallback;
+    my $unspawned;
+    my $index;
+    my $busy_count=0;
+    state $robin=1;
+    for(1..$#pairs){
+      $index=$_;
+      $worker=$pairs[$index];
+      if($worker->[WORKER_BUSY]){
+          if($worker->[WORKER_ID]){
+            $busy_count++;
+            # Fully spawned an working on a request
+          }
+          else {
+            # half spawned, this has at least 1 message
+            # if all other workers are busy we use the first one of these we come accros
+            #say "found using $index as fallback";
+            $fallback//=$index;
+          }
+      }
+      else {
+        # Not busy
+        #
+        if($worker->[WORKER_ID]){
+          # THIS IS THE WORKER WE WANT
+          #say "found non busy worker";
+          return $worker;
+        }
+        else{
+          # Not spawned.  Use first one we come accross if we need to spawn
+          #say "found using $index as unspawned";
+          $unspawned//=$index;
         }
       }
     }
+
+    #  Use the about to be spawned worker
+    return $pairs[$fallback] if defined $fallback;
+
+    # Here we actaully need to spawn a worker
     
-    # Round robin schedule  into existing worker pool
-    my $worker_index=shift @pool_free;
-    say "WORKER INDEX $worker_index";
-    push @pool_free, $worker_index;
-    $pairs[$worker_index];
+    my $template_worker=spawn_template(); #ensure template exists
+  
+    if($busy_count < (@pairs-1)){
+      
+      #say "Busy count  less...Spawning";
+      unshift $template_worker->[WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $unspawned];
+      $index=$unspawned;
+      $in_flight++;
+    }
+    else{
+      #say "Busy count greater or equal too worker count";
+      $index=$robin++;
+      $robin=1 if $robin >=@pairs;
+    }
+
+    #say "worker index: $index";    
+    $pairs[$index][WORKER_BUSY]=1;
+    $pairs[$index];
+
 }
 
 
@@ -134,7 +186,7 @@ sub _get_worker{
 sub pool_next{
 
   # handle returns first .. TODO: This is only if no event system is being used
-  results_available unless $has_event_loop;
+  results_available unless $Shared;
 
   for(@pairs){
     DEBUG and say "POOL next for ".$_->[WORKER_ID]." busy: $_->[WORKER_BUSY], queue; $_->[WORKER_QUEUE]";
@@ -145,12 +197,12 @@ sub pool_next{
     next unless $_->[WORKER_QUEUE]->@*;
 
     $_->[WORKER_BUSY]=1;
-    $busy_count++;
 
-    my $req=shift $_->[WORKER_QUEUE]->@*;
+    #my $req=shift $_->[WORKER_QUEUE]->@*;
+    my $req=$_->[WORKER_QUEUE][0];
     $req->[REQ_WORKER]=$_->[WORKER_ID];
     
-    $reqs{$req->[REQ_ID]}=$req; #Add to outstanding
+    #$reqs{$req->[REQ_ID]}=$req; #Add to outstanding
 
 
     # Header
@@ -227,13 +279,14 @@ sub process_results{
     $bin=substr $bin, 8;  #two lots of shorts
 
     # Remove from the outstanding table
-    my $entry=delete $reqs{$id};
+    my $entry=shift $worker->[WORKER_QUEUE]->@*;
+    $in_flight--;
+    #my $entry=delete $reqs{$id};
     
     # Mark the returning worker as not busy
     #
     #$pool{$entry->[REQ_WORKER]}[WORKER_BUSY]=0;
     $worker->[WORKER_BUSY]=0;
-    $busy_count--;
 
     if($cmd==CMD_GAI){
       DEBUG and say "<< GAI return from worker $entry->[REQ_WORKER]";
@@ -270,11 +323,9 @@ sub process_results{
       unshift @pool_free, $index;
       my $worker=$pairs[$index];
       $worker->[WORKER_ID]=$pid;
-      #$pool{$pid}=$worker;
+      # turn on the worker by clearing the busy flag
+      $worker->[WORKER_BUSY]=0;
       $fd_worker_map{fileno $worker->[WORKER_READ]}=$worker;
-      #my ($parent_read, $parent_write, $child_read, $child_write)=$pairs[$index]->@*;
-      #my $worker=$pool{$pid}=[$pid, $parent_read, $parent_write, [], 0];
-      #$fd_worker_map{fileno $parent_read}=$worker;
 
       DEBUG and say "<< SPAWN RETURN FROM TEMPLATE $entry->[REQ_WORKER]: new worker $pid";
     }
@@ -285,7 +336,7 @@ sub process_results{
       @pool_free=grep $pairs[$_]->[WORKER_ID] != $id, @pool_free;
     }
 
-    pool_next if $has_event_loop;
+    pool_next if $Shared;
 }
 
 sub results_available {
@@ -335,11 +386,12 @@ sub getaddrinfo{
     my $worker=_get_worker;
     my $req=[CMD_GAI, $i++, $hints, $on_result, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
+    $in_flight++;
   }
 
   pool_next;
   #return true if outstanding requests
-  scalar %reqs;
+  $in_flight;
 }
 
 sub getnameinfo{
@@ -347,8 +399,10 @@ sub getnameinfo{
     my $worker=_get_worker;
     my $req=[CMD_GNI, $i++, [$addr, $flags], $on_result, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
+    $in_flight++;
     pool_next;
-    scalar %reqs;
+    #scalar %reqs;
+    $in_flight;
 }
 
 sub close_pool {
@@ -361,6 +415,7 @@ sub close_pool {
     my $worker=$pairs[$_];
     my $req=[CMD_KILL, $i++, [], undef, $_];
     push $worker->[WORKER_QUEUE]->@*, $req;
+    $in_flight++;
     pool_next;
   }
 }

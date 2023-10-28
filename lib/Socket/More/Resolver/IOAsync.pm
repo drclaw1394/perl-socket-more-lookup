@@ -6,6 +6,23 @@ use Socket::More::Resolver;
 
 use IO::Async::Handle;
 
+
+sub import {
+  shift;
+  shift;
+  my %options=@_;
+
+  # Create a shared resolver object
+  unless($options{no_shared}){
+      $Socket::More::Resolver::Shared= __PACKAGE__->new;
+  }
+
+}
+
+sub _reexport {
+    Socket::More::Resolver->import;
+}
+
 sub new {
   my $package=shift;
   my $self=bless {},$package;

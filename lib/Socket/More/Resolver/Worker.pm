@@ -4,7 +4,7 @@ unless(caller){
   my $gai_pack="($gai_data_pack)*";
 
   package main;
-  use constant::more DEBUG=>1;
+  use constant::more DEBUG=>0;
   use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL>;
   use v5.36;
 

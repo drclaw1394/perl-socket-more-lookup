@@ -3,21 +3,28 @@ package Socket::More::Resolver::IO::Async;
 use parent qw(IO::Async::Notifier);
 use IO::Async::Handle;
 
-use Socket::More::Resolver ();# no_export=>1;
+use Socket::More::Resolver  no_export=>1;
+use Export::These;# qw<prefork>;
 
 # Shared object,
 my $_shared;
 
 sub new;
 
-#import actually creates a shared object if it doesn't exist
-sub import {
-  shift;
-  return if $_shared;
-  $_shared=new(__PACKAGE__,   @_);
 
-  # Set the package variable
-  $Socket::More::Resolver::Shared=$_shared;
+sub _reexport {
+  shift;  #package
+  shift;  #target name space
+
+  my %options=@_;
+
+  # Create a shared resolver object
+  unless($options{no_shared}){
+      $Socket::More::Resolver::Shared= __PACKAGE__->new;
+  }
+
+  Socket::More::Resolver->import;
+
 }
 
 
