@@ -2,7 +2,7 @@ use v5.36;
 use IO::Async::Loop;
 use IO::Async::Timer::Periodic;
 
-use Socket::More::Resolver::IO::Async ;#prefork=>1;
+use Socket::More::Resolver::IO::Async {prefork=>1, max_workers=>10};
 
 my $loop=IO::Async::Loop->new;
 

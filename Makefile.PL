@@ -6,7 +6,7 @@ WriteMakefile(
     NAME              => 'Socket::More::Lookup',
     VERSION_FROM      => 'lib/Socket/More/Lookup.pm', # finds $VERSION, requires EU::MM from perl >= 5.5
     PREREQ_PM         => {
-      "Export::These" =>0,
+      "Export::These" =>"v0.2.0",
       "Socket::More::Constants"=>0
     }, 
     ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pod', # retrieve abstract from module

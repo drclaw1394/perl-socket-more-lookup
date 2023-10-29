@@ -3,7 +3,8 @@ package Socket::More::Resolver::Mojo::IOLoop;
 
 use IO::Handle;
 use Mojo::IOLoop;
-use Socket::More::Resolver ();# no_export=>1;
+use Socket::More::Resolver ();      # Do not run import, just load code.
+use Export::These export_pass=>[qw<max_workers prefork>];  # Allow pass through of names
 
 sub _add_to_loop;
 # Shared object,
@@ -11,16 +12,24 @@ my $_shared;
 my @watchers;
 
 
+sub _preexport {
+  shift; shift;
+  @_;
+}
 
-#import actually creates a shared object if it doesn't exist
-sub import {
+sub _reexport{
   shift;
-  return if $_shared;
+  shift;
+  #my @config=grep ref, @_;
+  #my %options=grep !ref, @_;
+  
 
-  $_shared=1;
-  # Set the package variable
-  $Socket::More::Resolver::Shared=$_shared;
+  Socket::More::Resolver->import(@_);
+  
+
+  $Socket::More::Resolver::Shared=1;
   _add_to_loop;
+
 }
 
 

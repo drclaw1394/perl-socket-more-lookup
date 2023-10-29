@@ -3,8 +3,8 @@ package Socket::More::Resolver::IO::Async;
 use parent qw(IO::Async::Notifier);
 use IO::Async::Handle;
 
-use Socket::More::Resolver  no_export=>1;
-use Export::These;# qw<prefork>;
+use Socket::More::Resolver ();   # no not run import
+use Export::These export_pass=>[qw<max_workers prefork>];
 
 # Shared object,
 my $_shared;
@@ -12,19 +12,26 @@ my $_shared;
 sub new;
 
 
+sub _preexport {
+  shift; shift;
+  @_;
+}
+
 sub _reexport {
   shift;  #package
   shift;  #target name space
 
-  my %options=@_;
+  my @config=grep ref, @_;
 
-  # Create a shared resolver object
+  my %options=map %$_, @config;
+  # Create a shared resolver object if it doesn't exist
+  # NOTE: user is required to add to the desired run loop
+  #
   unless($options{no_shared}){
       $Socket::More::Resolver::Shared= __PACKAGE__->new;
-  }
+  } 
 
-  Socket::More::Resolver->import;
-
+  Socket::More::Resolver->import(@_);
 }
 
 

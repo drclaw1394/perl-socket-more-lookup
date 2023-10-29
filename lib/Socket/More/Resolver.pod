@@ -45,24 +45,42 @@ Uses pure Perl unless L<Socket::More::Lookup> in available, (part of
 L<Socket::More>). In this case the lookup routines are used from that module
 (less memory, faster).
 
-=head1 USAGE
+=head1 USAGE (with or without an event loop)
+
+The resolver is designed to work with or without an event loop:
+
+=over 
+
+=item Using without an event loop
+
+  use Socket::More::Resolver (options);
+
+=item Using with an eventloop
+
+  use Socket::More::Resolver::DRIVER::PACKAGE (options);
+
+  eg
+      use Socket::More::Resolver::AE;           #AnyEvent
+      use Socket::More::Resolver::IO::Async;    #IO::Async
+      use Socket::More::Resolver::Mojo::IOLoo;  # Mojo
+
+=back
+
+In either case, this will automatically start the worker pool, if it hasn't
+already been started. 
+
+Using the supported event loops, the above will automatically integrate the
+required IO monitoring. Please refer the docs of the builtin drivers for
+details/differences on their usage.
+
+TODO: fix mojo default loop
 
 
+=head2 Options
 
-=head2 Importing
+There a couple of options which influence resolver. These are specified as
+import options in either the event loop driver or non event loop case:
 
-The resolver can be imported with
-
-  use MY::EVENT::LOOP::OF::CHOICE;
-  use Socket::More::Resolver;
-
-This will automatically start the worker pool, if it hasn't already been
-started and automatically integrate with your event loop.
-
-If you would like to assert the event loop to use, or the max size of the
-worker pool, these are set via import arguments
-
-  use Socket::More::Resolver max_worker=>x, event_loop=>"package_name", prefill=>1;
 
 =over
 =item no_export
@@ -74,27 +92,27 @@ namespace. Useful when making a wrapper class/driver for event loops that want
 to use the same names
 
 =item max_worker
+  
+  max_worker=>$number
 
 This item sets the maximum number of workers to spawn. The default is 4.
 
-=item event_loop
+=item prefork
 
-The package name, as a string, indicating which event loop you want to
-integrate into, instead of autodetecting one:
+  prefork=>1||0
 
-  event_loop=>"AnyEvent"
+Start all workers at launch instead of as needed.
 
-Alternatively, this can be a subroutine, is called for each read fd requiring
-monitoring. It is passed the fd, and the subroutine reference to execute when
-readable. Any value returned is stored internally to keep the 'watcher active'
+=head1 Adding other event loops
 
+If you need to add an event loop which isn't directly supported, the easiest
+way is to look at the code for one of the existing drivers. The basic idea is
+to use the reexporting facility in L<Export::These> to pass through import
+options to L<Socket::More::Resolver>. The name of thedriver is completely up to
+the author.
 
-    # eg for AnyEvent
-
-    event_loop=>sub {
-      my ($fd,$sub)=@_;  
-        AE::io $fd, 0 , $sub;
-      }
+There is no class/OO/mixin requirements from the resolver, so the driver can be
+written based around your event loop API and inheritance structure.
 
 
 =head2 API

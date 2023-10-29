@@ -10,6 +10,8 @@ use constant::more qw<REQ_CMD=0   REQ_ID  REQ_DATA  REQ_CB  REQ_WORKER>;
 
 use Fcntl;
 
+use Export::These qw<getaddrinfo getnameinfo close_pool>;
+
 my $gai_data_pack="l> l> l> l> l>/A* l>/A*";
 
 #REQID  and as above
@@ -26,17 +28,15 @@ my $i=0;    # Sequential ID of requests
 
 my $in_flight=0;
 
-#my %reqs;   # Outstanding requests
 
-my %pool;           # workers stored by pid
-my @pool_free;      # pids (keys) of workers we can use
+#my @pool_free;      # pids (keys) of workers we can use
 my $pool_max=4;
 
 
 my @pairs;        # file handles for parent/child pipes
                   # preallocated with first import of this module
 
-my $template_pid;
+                  #my $template_pid;
 
 our $Shared;
 
@@ -44,28 +44,14 @@ my %fd_worker_map;
 
 
 
+# In the pre export, we start the workers if not already started.
+#
+sub _preexport {
+  shift; shift;
 
-sub import {
-  # options include 
-  #   pool size
-  #   preallocate
-  #
-  my $_p=shift;
-  my %options=@_;
+  my %options=map %$_, grep ref, @_;
   
-  unless($options{no_export}){
-    # Roll our own exporter for low memory and to preallocate pipes
-    # NEED TO WORK WITH EXPORT LEVEL INSTEAD OF SIMPLY CALLER
-    my $package=caller $Exporter::ExportLevel;
-    Socket::More::Resolver::DEBUG and say "CALLER IS $package";
-    no strict "refs";
 
-    #
-    *{$package."::getaddrinfo"}=\&getaddrinfo;
-    *{$package."::getnameinfo"}=\&getnameinfo;
-    *{$package."::close_pool"}=\&close_pool;
-  }
-  
   # Don't generate pairs if they already exist
   return if @pairs;
 
@@ -88,16 +74,46 @@ sub import {
   spawn_template();
 
   # Prefork
-  if(1 or $options{prefork}){ 
+  
+  say "Options @{[%options]}";
+  if($options{prefork}){ 
     for(1..($pool_max-1)){
         unshift $pairs[0][WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $_];
         $in_flight++;
     }
   }
-
-
-  1; 
+  grep !ref, @_; 
 }
+
+#######################################################################
+# sub _reexport{                                                      #
+#   # options include                                                 #
+#   #   pool size                                                     #
+#   #   preallocate                                                   #
+#   #                                                                 #
+#   #my $_p=shift;                                                    #
+#   shift;                                                            #
+#   shift;                                                            #
+#   my %options=@_;                                                   #
+#                                                                     #
+#   unless($options{no_export}){                                      #
+#     # Roll our own exporter for low memory and to preallocate pipes #
+#     # NEED TO WORK WITH EXPORT LEVEL INSTEAD OF SIMPLY CALLER       #
+#     my $package=caller $Exporter::ExportLevel;                      #
+#     Socket::More::Resolver::DEBUG and say "CALLER IS $package";     #
+#     no strict "refs";                                               #
+#                                                                     #
+#     #                                                               #
+#     #*{$package."::getaddrinfo"}=\&getaddrinfo;                     #
+#     #*{$package."::getnameinfo"}=\&getnameinfo;                     #
+#     #*{$package."::close_pool"}=\&close_pool;                       #
+#   }                                                                 #
+#                                                                     #
+#                                                                     #
+#                                                                     #
+#   1;                                                                #
+# }                                                                   #
+#######################################################################
 
 
 
@@ -285,7 +301,6 @@ sub process_results{
     
     # Mark the returning worker as not busy
     #
-    #$pool{$entry->[REQ_WORKER]}[WORKER_BUSY]=0;
     $worker->[WORKER_BUSY]=0;
 
     if($cmd==CMD_GAI){
@@ -320,7 +335,7 @@ sub process_results{
       # 
       my $pid=unpack "l>", $bin;
       my $index=$entry->[2];  #
-      unshift @pool_free, $index;
+      #unshift @pool_free, $index;
       my $worker=$pairs[$index];
       $worker->[WORKER_ID]=$pid;
       # turn on the worker by clearing the busy flag
@@ -332,8 +347,7 @@ sub process_results{
     elsif($cmd == CMD_KILL){
       my $id=$entry->[REQ_WORKER];
       DEBUG and say "<< KILL RETURN FROM WORKER: $id : $worker->[WORKER_ID]";
-      #delete $pool{$id};
-      @pool_free=grep $pairs[$_]->[WORKER_ID] != $id, @pool_free;
+      #@pool_free=grep $pairs[$_]->[WORKER_ID] != $id, @pool_free;
     }
 
     pool_next if $Shared;
@@ -438,8 +452,6 @@ sub monitor_workers {
           # Scan the pending requests previously allocated
           my $dead=$fd_worker_map{$pid};
           
-          # remove from pool
-          #delete $pool{$pid};
 
           # TODO: what if it was the template process?           
           $dead
@@ -474,9 +486,8 @@ sub spawn_template {
     # parent
     #
     $worker->[WORKER_ID]=$pid;
-    #$pool{$pid}=$worker;
     $fd_worker_map{fileno $worker->[WORKER_READ]}=$worker;
-    push @pool_free, 0;
+    #push @pool_free, 0;
     $worker;
 
   }

@@ -1,19 +1,22 @@
 use v5.36;
 package Socket::More::Resolver::AE;
-use Socket::More::Resolver (no_export=>1);
-use Export::These;
+use Socket::More::Resolver ();      # Do not run import
+use Export::These export_pass=>[qw<max_workers prefork>];  # Allow pass through of names
 
 sub _add_to_loop;
 
 my $_timer;
 my @watchers;
+sub _preexport {
+  shift; shift;
+  @_;
+}
 
 sub _reexport{
   shift;
   shift;
-  my %options=@_;
   
-  Socket::More::Resolver->import;
+  Socket::More::Resolver->import(@_);
   
 
   $Socket::More::Resolver::Shared=1;
