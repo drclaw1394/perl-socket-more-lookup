@@ -4,7 +4,7 @@ no warnings "experimental";
 
 use constant::more DEBUG=>0;
 
-use constant::more qw<CMD_GAI=0   CMD_GNI   CMD_SPAWN   CMD_KILL>;
+use constant::more qw<CMD_GAI=0   CMD_GNI   CMD_SPAWN   CMD_KILL CMD_REAP>;
 use constant::more qw<WORKER_ID=0 WORKER_READ   WORKER_WRITE  WORKER_CREAD WORKER_CWRITE WORKER_QUEUE  WORKER_BUSY>;
 use constant::more qw<REQ_CMD=0   REQ_ID  REQ_DATA  REQ_CB  REQ_WORKER>;
 
@@ -45,6 +45,7 @@ my %fd_worker_map;
 
 
 # In the pre export, we start the workers if not already started.
+# Also detect event system.
 #
 sub _preexport {
   shift; shift;
@@ -53,67 +54,76 @@ sub _preexport {
   
 
   # Don't generate pairs if they already exist
-  return if @pairs;
+  if(!@pairs){
 
-  $pool_max=($options{max_workers}//4);
+    $pool_max=($options{max_workers}//4);
 
-  #pre allocate enough pipes for full pool
-  for(1..$pool_max){
-    pipe my $c_read, my $p_write;
-    pipe my $p_read, my $c_write;
-    fcntl $c_read, F_SETFD, 0;  #Make sure we clear CLOSEXEC
-    fcntl $c_write, F_SETFD,0;
+    #pre allocate enough pipes for full pool
+    for(1..$pool_max){
+      pipe my $c_read, my $p_write;
+      pipe my $p_read, my $c_write;
+      fcntl $c_read, F_SETFD, 0;  #Make sure we clear CLOSEXEC
+      fcntl $c_write, F_SETFD,0;
 
-    push @pairs,[0, $p_read, $p_write, $c_read, $c_write, [], 0]; 
-  }
+      push @pairs,[0, $p_read, $p_write, $c_read, $c_write, [], 0]; 
+    }
 
-  
-  # Create the template process here. This is the first worker
-  #Need to bootstrap/ create the first worker, which is used as a template
-  DEBUG and say STDERR "Create worker: Bootrapping  first/template worker"; 
-  spawn_template();
 
-  # Prefork
-  
-  say "Options @{[%options]}";
-  if($options{prefork}){ 
-    for(1..($pool_max-1)){
+    # Create the template process here. This is the first worker
+    #Need to bootstrap/ create the first worker, which is used as a template
+    DEBUG and say STDERR "Create worker: Bootrapping  first/template worker"; 
+    spawn_template();
+
+    # Prefork
+
+    say "Options @{[%options]}";
+    if($options{prefork}){ 
+      for(1..($pool_max-1)){
         unshift $pairs[0][WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $_];
         $in_flight++;
+      }
     }
+
+    # Work with event systems 
+    my $sub;
+
+    my @search=qw<AE IO::Async Mojo::IOLoop>; # Built in drivers
+    for($options{loop_driver}//()){
+      if(ref eq "CODE"){
+        $sub=$_;
+      }
+      if(ref eq "ARRAY"){
+        unshift @search, @$_;
+      }
+      else {
+        #Assume a string
+        unshift @search, $_;
+      }
+    }
+
+    if($options{no_loop}){
+      # Prevent event loop integration
+      $sub=undef;
+    }
+    else{
+      # Use search list
+      no strict "refs";
+      for(@search){
+        if(%{$_."::"}){
+          say "FOUND system $_";
+          $sub=eval "require Socket::More::Resolver::$_";
+          die $@ if $@;
+          last;
+        }
+      }
+    }
+    say "SUB is $sub"; 
+    $sub->() if($sub);
+    #grep !ref, @_; 
   }
-  grep !ref, @_; 
+  @_;
 }
 
-#######################################################################
-# sub _reexport{                                                      #
-#   # options include                                                 #
-#   #   pool size                                                     #
-#   #   preallocate                                                   #
-#   #                                                                 #
-#   #my $_p=shift;                                                    #
-#   shift;                                                            #
-#   shift;                                                            #
-#   my %options=@_;                                                   #
-#                                                                     #
-#   unless($options{no_export}){                                      #
-#     # Roll our own exporter for low memory and to preallocate pipes #
-#     # NEED TO WORK WITH EXPORT LEVEL INSTEAD OF SIMPLY CALLER       #
-#     my $package=caller $Exporter::ExportLevel;                      #
-#     Socket::More::Resolver::DEBUG and say "CALLER IS $package";     #
-#     no strict "refs";                                               #
-#                                                                     #
-#     #                                                               #
-#     #*{$package."::getaddrinfo"}=\&getaddrinfo;                     #
-#     #*{$package."::getnameinfo"}=\&getnameinfo;                     #
-#     #*{$package."::close_pool"}=\&close_pool;                       #
-#   }                                                                 #
-#                                                                     #
-#                                                                     #
-#                                                                     #
-#   1;                                                                #
-# }                                                                   #
-#######################################################################
 
 
 
@@ -355,6 +365,7 @@ sub process_results{
 
 sub results_available {
   my $timeout=shift//0;
+  say "RESULTS AVAILABLE";
   DEBUG and say "CHECKING IF ReSULTS AVAILABLE";
   # Check if any workers are ready to talk 
   my $bits="";
@@ -454,8 +465,13 @@ sub monitor_workers {
           
 
           # TODO: what if it was the template process?           
-          $dead
+          $dead;
+          say "DEAD CHILD $pid";
+          exit;
 
+        }
+        else {
+          #say "======NO DEAD FOUND";
         }
       } while ($pid>0);
 }
