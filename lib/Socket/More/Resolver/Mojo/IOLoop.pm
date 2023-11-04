@@ -4,7 +4,11 @@ package Socket::More::Resolver::Mojo::IOLoop;
 use IO::Handle;
 use Mojo::IOLoop;
 
-our @watchers;
+# Circular reference to lexical scope variable.
+my $circle=[];
+my $_timer;   
+my @watchers;
+push @$circle, $circle, \$_timer, \@watchers;
 
 
 sub {
@@ -15,7 +19,6 @@ sub {
   $Socket::More::Resolver::Shared=1;
   # Code here to set up event handling on $loop that may be required
   my @fh=Socket::More::Resolver::to_watch;
-  my $watchers=$self->{watchers};
   for(@fh){
     my $fh=$_;
     my $in_fd=fileno $fh;
@@ -24,11 +27,12 @@ sub {
           Socket::More::Resolver::process_results $in_fd;
       }
     )->watch($w,1,0);
-    push @$watchers, $w;
+    push @watchers, $w;
   }
 
 
   # Add timer/monitor here
+  $loop->recurring(1, \&Socket::More::Resolver::monitor_workers);
   
   # set clean up routine here
 }

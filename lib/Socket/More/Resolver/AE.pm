@@ -24,5 +24,11 @@ sub {
   $Socket::More::Resolver::Shared=1; 
   #setup timer to monitor child existance
   $_timer=AE::timer 0, 1, \&Socket::More::Resolver::monitor_workers;
+  my $_sig=AE::signal "CHLD", sub {
+  #say "SIG CHILD $_[0]===========";
+    &Socket::More::Resolver::monitor_workers;
+  };
+  push @$circle, $_sig;
+
 }
 

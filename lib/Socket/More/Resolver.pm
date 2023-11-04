@@ -57,6 +57,8 @@ sub _preexport {
   if(!@pairs){
 
     $pool_max=($options{max_workers}//4);
+    $pool_max=4 if $pool_max <=0;
+    $pool_max++;
 
     #pre allocate enough pipes for full pool
     for(1..$pool_max){
@@ -226,6 +228,7 @@ sub pool_next{
 
     #my $req=shift $_->[WORKER_QUEUE]->@*;
     my $req=$_->[WORKER_QUEUE][0];
+    say "REQUEST FOR WORKER QUEUE is $req";
     $req->[REQ_WORKER]=$_->[WORKER_ID];
     
     #$reqs{$req->[REQ_ID]}=$req; #Add to outstanding
@@ -237,8 +240,9 @@ sub pool_next{
     # Body
     if($req->[REQ_CMD]==CMD_SPAWN){
         # Write to template process
-        DEBUG and say ">> SENDING CMD_SPWAN TO WORKER: $req->[REQ_WORKER]";
+        #DEBUG and 
         my $windex=$req->[2];
+        say ">> SENDING CMD_SPWAN TO WORKER: $req->[REQ_WORKER], worker index $windex";
         my $cread=fileno $pairs[$windex][WORKER_CREAD];
         my $cwrite=fileno $pairs[$windex][WORKER_CWRITE];
 
@@ -269,6 +273,10 @@ sub pool_next{
     elsif($req->[REQ_CMD]== CMD_KILL){
       DEBUG and say ">> Sending CMD_KILL to worker: $req->[REQ_WORKER]";
       $ofd=$_->[WORKER_WRITE];
+    }
+    elsif($req->[REQ_CMD]== CMD_REAP){
+      $out.=pack("l>/l>*", $req->[REQ_DATA]->@*);
+      $ofd=$pairs[0][WORKER_WRITE];
     }
     else {
       die "UNkown command in pool_next";
@@ -345,6 +353,9 @@ sub process_results{
       # 
       my $pid=unpack "l>", $bin;
       my $index=$entry->[2];  #
+      use Data::Dumper;
+      say Dumper $entry;
+      say "SPAWN RETURN: pid $pid  index $index";
       #unshift @pool_free, $index;
       my $worker=$pairs[$index];
       $worker->[WORKER_ID]=$pid;
@@ -358,6 +369,36 @@ sub process_results{
       my $id=$entry->[REQ_WORKER];
       DEBUG and say "<< KILL RETURN FROM WORKER: $id : $worker->[WORKER_ID]";
       #@pool_free=grep $pairs[$_]->[WORKER_ID] != $id, @pool_free;
+    }
+    elsif($cmd ==CMD_REAP){
+      # Grandchild process  checking  via template process
+      my @pids=unpack "l>/l>*", $bin;
+
+      for(@pids){
+        next unless $_ >0;
+
+        my $index=-1; # ignore template
+        #Locate the pid in the worker slots
+        for my $windex (1..$#pairs){
+          if($pairs[$windex][WORKER_ID]==$_){
+            $index=$windex;
+            last;
+          }
+        }
+
+        if($index>0){
+          $pairs[$index][WORKER_ID]=0;
+          $pairs[$index][WORKER_BUSY]=0;
+          #only restart if the worker has items in its queue
+          if($pairs[$index][WORKER_QUEUE]->@*){
+            unshift $pairs[0][WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $index];
+            $in_flight++;
+          }
+        }
+        else {
+          # ignore
+        }
+      }
     }
 
     pool_next if $Shared;
@@ -438,11 +479,28 @@ sub close_pool {
   #generate messages to close
   for(@indexes){
     my $worker=$pairs[$_];
+    next unless $worker->[WORKER_ID];
+
     my $req=[CMD_KILL, $i++, [], undef, $_];
     push $worker->[WORKER_QUEUE]->@*, $req;
     $in_flight++;
     pool_next;
   }
+}
+
+# Send kill signal to all workers (not template)
+# This forces respawning.
+sub kill_pool {
+  my @indexes=1..$#pairs;
+  for(@indexes){
+    my $worker=$pairs[$_];
+    next unless $worker->[WORKER_ID];
+
+    kill 'KILL', $worker->[WORKER_ID];
+    $worker->[WORKER_ID]=0;
+    $worker->[WORKER_BUSY]=0;
+  }
+
 }
 
 # return the parent side reading filehandles. This is what is needed for event loops
@@ -451,29 +509,44 @@ sub to_watch {
 }
 
 sub monitor_workers {
-  use POSIX ":sys_wait_h"; 
-      # See if any children have exited or been killed.
-      # Reap them
-      # Re spawn them
-      my $pid;
-      do{ 
-        $pid=waitpid -1, WNOHANG;
-        if($pid>0){
-          # Found a dead worker Respawn, 
-          # Scan the pending requests previously allocated
-          my $dead=$fd_worker_map{$pid};
-          
+say "MONITOR WORKERS=====";
+  use POSIX qw<:sys_wait_h :errno_h>; 
 
-          # TODO: what if it was the template process?           
-          $dead;
-          say "DEAD CHILD $pid";
-          exit;
+  # check we have a template
+  my $tpid=$pairs[0][WORKER_ID];
+  my $res=waitpid $tpid, WNOHANG;
+  say "TEMPLAT PID IS $tpid and res was $res";
+  if($res==$tpid){
+    # This is the non event case
+    $pairs[0][WORKER_ID]=0;
+    say "CLOSING POOL===";
+    #close_pool;
+    kill_pool;
+  }
+  elsif($res == -1 and $! == ECHILD){
+    # Event loops take over the child listening.... so work around
+    #
+    $pairs[0][WORKER_ID]=0;
+    say "CLOSING POOL ECHILD===";
+    #close_pool;
+    kill_pool;
+  }
+  else {
+    # Template still active, use it as proxy
+    my @pids= map {$_->[WORKER_ID]} @pairs;
+    shift @pids; #remove template from the list
 
-        }
-        else {
-          #say "======NO DEAD FOUND";
-        }
-      } while ($pid>0);
+    push $pairs[0][WORKER_QUEUE]->@*, [CMD_REAP, $i++, [@pids], \&_monitor_callback];
+    $in_flight++;
+  }
+
+  pool_next;
+  $in_flight;
+}
+
+sub _monitor_callback {
+say "MONITOR CALLBACK";
+  
 }
 
 sub cleanup_worker {

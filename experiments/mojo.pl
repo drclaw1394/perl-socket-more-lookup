@@ -1,6 +1,7 @@
 use v5.36;
 use Mojo::IOLoop;
 use Socket::More::Resolver {prefork=>1, max_workers=>5};
+use Socket::More::Resolver;
 
 
 #$loop->add($Socket::More::Resolver::Shared);

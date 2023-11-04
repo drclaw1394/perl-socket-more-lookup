@@ -4,8 +4,9 @@ unless(caller){
   my $gai_pack="($gai_data_pack)*";
 
   package main;
+  use POSIX ":sys_wait_h"; 
   use constant::more DEBUG=>0;
-  use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL>;
+  use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL CMD_REAP>;
   use v5.36;
 
   # process any command line arguments for input and output FDs
@@ -133,6 +134,26 @@ unless(caller){
       # worker needs to exit
       # 
       $run=undef;
+    }
+    elsif($cmd==CMD_REAP){
+      #
+      my @pids=unpack "l>/l>*", $bin;
+      say "WORKER $$ REAP HANDLER @pids";
+      my @reaped;
+      for(@pids){
+        my $ret;
+        if($_){
+          # Only do the syscall if the pid is non zero
+          $ret=waitpid $_, WNOHANG;
+          say $! if $ret == -1;
+        }
+        else {
+          $ret=0;
+        }
+        push @reaped, $ret;
+      }
+      say "Reaped @reaped";
+      $return_out.=pack "l>/l>*", @reaped;
     }
 
     else {
