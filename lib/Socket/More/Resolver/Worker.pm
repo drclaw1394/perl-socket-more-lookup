@@ -1,13 +1,25 @@
 package Socket::More::Resolver::Worker;
+use strict;
+use warnings;
+use feature "say";
 unless(caller){
+  $0="S::M::R::W";
   my $gai_data_pack="l> l> l> l> l>/A* l>/A*";
   my $gai_pack="($gai_data_pack)*";
 
   package main;
-  use POSIX ":sys_wait_h"; 
-  use constant::more DEBUG=>0;
-  use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL CMD_REAP>;
-  use v5.36;
+  #use POSIX ":sys_wait_h"; 
+  #use constant::more DEBUG=>0;
+  #use constant::more qw<CMD_GAI=0 CMD_GNI CMD_SPAWN CMD_KILL CMD_REAP>;
+  BEGIN {
+    *DEBUG=sub {0};
+    *CMD_GAI=sub {0};
+    *CMD_GNI=sub {1};
+    *CMD_SPAWN=sub {2};
+    *CMD_KILL=sub {3};
+    *CMD_REAP=sub {4};
+    *WNOHANG=sub {1};
+  }
 
   # process any command line arguments for input and output FDs
   my $run=1;
@@ -87,27 +99,26 @@ unless(caller){
       if($use_core){
         require Socket;
         my %hints=@e;
-        ($rc,@results)=Socket::getaddrinfo($host,$port, \%hints);
-        if($rc!=0 and @results ==0){
-          $results[0]=[$rc, -1, -1, -1, "", ""];
+        ($rc, @results)=Socket::getaddrinfo($host, $port, \%hints);
+        if($rc){
+          my $a=[$rc+0, -1, -1, -1, "", ""];
+          $return_out.=pack($gai_data_pack, @$a);
         }
-        for(@results){
-          #$_->[0]= $rc;
-          my $a=[$rc, $_->{hints}, $_->{family}, $_->{socktype}, $_->{protocol}, $_->{addr}, $_->{cannonname}];
-          $return_out.=pack($gai_data_pack, $a);
+        else {
+          for(@results){
+            my $a=[$rc, $_->{family}, $_->{socktype}, $_->{protocol}, $_->{addr}, $_->{cannonname}//""];
+            $return_out.=pack($gai_data_pack, @$a);
+          }
         }
       }
       else {
         require Socket::More::Lookup;
         $rc=Socket::More::Lookup::getaddrinfo($host, $port, \@e, \@results);
-        #$rc=1;
-        #@results=();
         unless (defined $rc){
           $results[0]=[$!, -1, -1, -1, "", ""];
         }
 
         for(@results){
-          $_->[0]= 0;
           $return_out.=pack($gai_data_pack, @$_);
         }
       }

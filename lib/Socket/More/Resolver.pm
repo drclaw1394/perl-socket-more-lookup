@@ -6,7 +6,7 @@ use constant::more DEBUG=>0;
 
 use constant::more qw<CMD_GAI=0   CMD_GNI   CMD_SPAWN   CMD_KILL CMD_REAP>;
 use constant::more qw<WORKER_ID=0 WORKER_READ   WORKER_WRITE  WORKER_CREAD WORKER_CWRITE WORKER_QUEUE  WORKER_BUSY>;
-use constant::more qw<REQ_CMD=0   REQ_ID  REQ_DATA  REQ_CB  REQ_WORKER>;
+use constant::more qw<REQ_CMD=0   REQ_ID  REQ_DATA  REQ_CB  REQ_ERR REQ_WORKER>;
 
 use Fcntl;
 
@@ -120,6 +120,9 @@ sub _preexport {
     $sub->() if($sub);
     #grep !ref, @_; 
   }
+  if($options{prefork}){
+      getaddrinfo for(1..($pool_max-1));
+  }
   @_;
 }
 
@@ -143,6 +146,7 @@ sub _preexport {
 # 
 sub _get_worker{
 
+#results_available unless $Shared;
     my $worker;
     my $fallback;
     my $unspawned;
@@ -155,12 +159,14 @@ sub _get_worker{
       if($worker->[WORKER_BUSY]){
           if($worker->[WORKER_ID]){
             $busy_count++;
-            # Fully spawned an working on a request
+            # Fully spawned and working on a request
+            DEBUG and say "GETTING WORKER: fully spawned $index";
           }
           else {
             # half spawned, this has at least 1 message
             # if all other workers are busy we use the first one of these we come accros
-            $fallback//=$index;
+            $fallback//=$index if $worker->[WORKER_QUEUE]->@*;
+            DEBUG and say "GETTING WORKER: half spawned fallback $index";
           }
       }
       else {
@@ -168,11 +174,13 @@ sub _get_worker{
         #
         if($worker->[WORKER_ID]){
           # THIS IS THE WORKER WE WANT
+          DEBUG and say "GETTING WORKER: found unbusy $index";
           return $worker;
         }
         else{
           # Not spawned.  Use first one we come accross if we need to spawn
           $unspawned//=$index;
+          DEBUG and say "GETTING WORKER: found unspawned $index";
         }
       }
     }
@@ -185,17 +193,19 @@ sub _get_worker{
     my $template_worker=spawn_template(); #ensure template exists
   
     if($busy_count < (@pairs-1)){
-      
-      unshift $template_worker->[WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $unspawned];
+      DEBUG and say "Queue spawn command to template for inext $unspawned"; 
+      push $template_worker->[WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $unspawned];
       $index=$unspawned;
       $in_flight++;
+      $pairs[$unspawned][WORKER_BUSY]=1;
     }
     else{
       $index=$robin++;
       $robin=1 if $robin >=@pairs;
     }
 
-    $pairs[$index][WORKER_BUSY]=1;
+    #$pairs[$index][WORKER_BUSY]=1;
+    #$pairs[$index][WORKER_ID]=-1;
     $pairs[$index];
 
 }
@@ -265,6 +275,7 @@ sub pool_next{
       $ofd=$_->[WORKER_WRITE];
     }
     elsif($req->[REQ_CMD]== CMD_REAP){
+      DEBUG and say ">> Sending CMD_REAP to worker: $req->[REQ_WORKER]";
       $out.=pack("l>/l>*", $req->[REQ_DATA]->@*);
       $ofd=$pairs[0][WORKER_WRITE];
     }
@@ -313,17 +324,24 @@ sub process_results{
     if($cmd==CMD_GAI){
       DEBUG and say "<< GAI return from worker $entry->[REQ_WORKER]";
       my @res=unpack $gai_pack, $bin;
-      if($entry and $entry->[REQ_CB]){
+      say "REsult code is $res[0]"; 
+      if($res[0] and $entry->[REQ_ERR]){
+        $entry->[REQ_ERR]($res[0]);
+      }
+      elsif($entry->[REQ_CB]){
         my @list;
         for my( $error, $family, $type, $protocol, $addr, $canonname)(@res){
           if(ref($entry->[REQ_DATA]) eq "ARRAY"){
-            push @list, [$error,$family,$type,$protocol, $addr, $canonname]; 
+            push @list, [$error, $family, $type, $protocol, $addr, $canonname]; 
           }
           else {
             push @list, {family=>$family, socktype=>$type, protocol=>$protocol, addr=>$addr, canonname=>$canonname};
           }
         }
         $entry->[REQ_CB](\@list);
+      }
+      else {
+        # throw away results
       }
 
 
@@ -360,6 +378,7 @@ sub process_results{
       # Grandchild process  checking  via template process
       my @pids=unpack "l>/l>*", $bin;
 
+      DEBUG and say "<< REAP RETURN FROM TEMPLATE $entry->[REQ_WORKER]";
       for(@pids){
         next unless $_ >0;
 
@@ -412,14 +431,12 @@ sub results_available {
 }
 
 sub getaddrinfo{
-  if( @_ !=0){
-
+  if( @_ ){
+    # If arguments present, then add to the request queue
 
     my ($host, $port, $hints, $on_result, $on_error)=@_;
 
     # Ensure hints is array ref
-    #die "hints must be array" unless ref($hints) eq "ARRAY";
-    # Ensure sane values for transmit
     my $ref=[];
     if(ref($hints) eq "ARRAY"){
       push @$hints, $host, $port;
@@ -432,7 +449,7 @@ sub getaddrinfo{
 
     # add the request to the queue and to outstanding table
     my $worker=_get_worker;
-    my $req=[CMD_GAI, $i++, $hints, $on_result, $worker->[WORKER_ID]];
+    my $req=[CMD_GAI, $i++, $hints, $on_result, $on_error, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
     $in_flight++;
   }
