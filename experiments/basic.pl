@@ -1,7 +1,7 @@
 use v5.36;
 use Data::Dumper;
 use Time::HiRes qw<sleep>;
-use Socket::More::Resolver {prefork=>1, max_workers=>10};
+use Socket::More::Resolver {prefork=>0, max_workers=>5};
 
 my $addr;
 for(1..1000){
@@ -12,9 +12,9 @@ for(1..1000){
     #say Dumper $_[0]
     $addr=$_[0][0]{addr};
   });
+  sleep 1;
 }
 
 say "OIJSDF";
 while(getaddrinfo){
-  sleep 0.1;
 }

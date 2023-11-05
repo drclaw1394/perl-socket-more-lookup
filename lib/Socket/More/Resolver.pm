@@ -2,7 +2,7 @@ package Socket::More::Resolver;
 use v5.36;
 no warnings "experimental";
 
-use constant::more DEBUG=>0;
+use constant::more DEBUG=>1;
 
 use constant::more qw<CMD_GAI=0   CMD_GNI   CMD_SPAWN   CMD_KILL CMD_REAP>;
 use constant::more qw<WORKER_ID=0 WORKER_READ   WORKER_WRITE  WORKER_CREAD WORKER_CWRITE WORKER_QUEUE  WORKER_BUSY>;
@@ -23,7 +23,8 @@ my $gai_pack="($gai_data_pack)*";
 sub results_available;
 sub process_results;
 sub getaddrinfo;
-
+sub shrink_pool;
+sub monitor_workers;
 my $i=0;    # Sequential ID of requests
 
 my $in_flight=0;
@@ -213,11 +214,12 @@ sub _get_worker{
 
 # Serialize messages to worker from queue
 sub pool_next{
+  my $w=shift;
 
   # handle returns first .. TODO: This is only if no event system is being used
   results_available unless $Shared;
 
-  for(@pairs){
+  for($w?$w:@pairs){
     DEBUG and say "POOL next for ".$_->[WORKER_ID]." busy: $_->[WORKER_BUSY], queue; $_->[WORKER_QUEUE]";
     my $ofd;
     # only process worker is initialized  not busy and  have something to process
@@ -290,8 +292,12 @@ sub pool_next{
 }
 
 
-# Accepts either the worker struct (array) ref or the
-# file descriptor of the worker read (parent) end
+# Peforms a read on the pipe, parses response from worker
+# and executes callbacks as needed
+#
+# This is the routine needing to be called from an event loop
+# when the pipe is readable
+#
 sub process_results{
   my $fd_or_struct=shift;
   my $worker;
@@ -372,6 +378,7 @@ sub process_results{
     elsif($cmd == CMD_KILL){
       my $id=$entry->[REQ_WORKER];
       DEBUG and say "<< KILL RETURN FROM WORKER: $id : $worker->[WORKER_ID]";
+      $worker->[WORKER_ID]=0;
       #@pool_free=grep $pairs[$_]->[WORKER_ID] != $id, @pool_free;
     }
     elsif($cmd ==CMD_REAP){
@@ -406,7 +413,7 @@ sub process_results{
       }
     }
 
-    pool_next if $Shared;
+    pool_next $worker if $Shared;
 }
 
 sub results_available {
@@ -455,6 +462,8 @@ sub getaddrinfo{
   }
 
   pool_next;
+  shrink_pool;
+  monitor_workers unless $Shared;
   #return true if outstanding requests
   $in_flight;
 }
@@ -480,7 +489,7 @@ sub close_pool {
     my $worker=$pairs[$_];
     next unless $worker->[WORKER_ID];
 
-    my $req=[CMD_KILL, $i++, [], undef, $_];
+    my $req=[CMD_KILL, $i++, [], undef, undef, $_];
     push $worker->[WORKER_QUEUE]->@*, $req;
     $in_flight++;
     pool_next;
@@ -531,7 +540,7 @@ sub monitor_workers {
     my @pids= map {$_->[WORKER_ID]} @pairs;
     shift @pids; #remove template from the list
 
-    push $pairs[0][WORKER_QUEUE]->@*, [CMD_REAP, $i++, [@pids], \&_monitor_callback];
+    push $pairs[0][WORKER_QUEUE]->@*, [CMD_REAP, $i++, [@pids], \&_monitor_callback, undef];
     $in_flight++;
   }
 
@@ -573,6 +582,18 @@ sub spawn_template {
     $file=~s|\.pm|/Worker.pm|;
     local $"=",";
     exec $^X, $file, "--in", "@ins", "--out", "@outs";
+  }
+}
+
+sub shrink_pool {
+  # work backwards and send a kill message to any non busy workers
+  my $template_worker=spawn_template(); #ensure template exists
+  for(reverse(@pairs)){
+    next if $_== $template_worker;
+    next if $_->[WORKER_BUSY];
+    my $req=[CMD_KILL, $i++, [], undef, undef, $_];
+    push $_->[WORKER_QUEUE]->@*, $req;
+    $in_flight++;
   }
 }
 1;

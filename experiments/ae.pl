@@ -1,6 +1,6 @@
 use v5.36;
 use AnyEvent;
-use Socket::More::Resolver {prefork=>0, max_workers=>100};
+use Socket::More::Resolver {prefork=>0, max_workers=>5};
 use Socket::More::Lookup qw<gai_strerror>;
 use Data::Dumper;
 
