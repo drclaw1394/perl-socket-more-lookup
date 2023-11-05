@@ -1,7 +1,6 @@
 use v5.36;
 use AnyEvent;
 use Socket::More::Resolver {prefork=>1, max_workers=>10};
-use Socket::More::Resolver;
 use Data::Dumper;
 
 my $timer;

@@ -1,4 +1,29 @@
-use v5.36;
+=head1 NAME
+
+Socket::More::Resolver::IO::Async - Resolver IO::Async Integration
+
+=head1 SYNOPSIS
+
+  use IO::Async;
+
+  use Socket::More::Resolver;
+
+  ... 
+
+  getaddrinfo...
+
+=head1 DESCRIPTION
+
+Built in driver for integrating L<Socket::More::Resolver> into the
+L<IO::Async> event loop.
+
+If the event loop module is already in memory, it should automatically be
+detected when using L<Socket::More::Resolver>;
+
+=cut
+
+use warnings;
+use strict;
 package Socket::More::Resolver::IO::Async;
 use parent qw(IO::Async::Notifier);
 use IO::Async::Handle;

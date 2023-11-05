@@ -78,7 +78,6 @@ sub _preexport {
 
     # Prefork
 
-    say "Options @{[%options]}";
     if($options{prefork}){ 
       for(1..($pool_max-1)){
         unshift $pairs[0][WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $_];
@@ -112,14 +111,12 @@ sub _preexport {
       no strict "refs";
       for(@search){
         if(%{$_."::"}){
-          say "FOUND system $_";
           $sub=eval "require Socket::More::Resolver::$_";
           die $@ if $@;
           last;
         }
       }
     }
-    say "SUB is $sub"; 
     $sub->() if($sub);
     #grep !ref, @_; 
   }
@@ -163,7 +160,6 @@ sub _get_worker{
           else {
             # half spawned, this has at least 1 message
             # if all other workers are busy we use the first one of these we come accros
-            #say "found using $index as fallback";
             $fallback//=$index;
           }
       }
@@ -172,12 +168,10 @@ sub _get_worker{
         #
         if($worker->[WORKER_ID]){
           # THIS IS THE WORKER WE WANT
-          #say "found non busy worker";
           return $worker;
         }
         else{
           # Not spawned.  Use first one we come accross if we need to spawn
-          #say "found using $index as unspawned";
           $unspawned//=$index;
         }
       }
@@ -192,18 +186,15 @@ sub _get_worker{
   
     if($busy_count < (@pairs-1)){
       
-      #say "Busy count  less...Spawning";
       unshift $template_worker->[WORKER_QUEUE]->@*, [CMD_SPAWN, $i++, $unspawned];
       $index=$unspawned;
       $in_flight++;
     }
     else{
-      #say "Busy count greater or equal too worker count";
       $index=$robin++;
       $robin=1 if $robin >=@pairs;
     }
 
-    #say "worker index: $index";    
     $pairs[$index][WORKER_BUSY]=1;
     $pairs[$index];
 
@@ -228,7 +219,6 @@ sub pool_next{
 
     #my $req=shift $_->[WORKER_QUEUE]->@*;
     my $req=$_->[WORKER_QUEUE][0];
-    say "REQUEST FOR WORKER QUEUE is $req";
     $req->[REQ_WORKER]=$_->[WORKER_ID];
     
     #$reqs{$req->[REQ_ID]}=$req; #Add to outstanding
@@ -242,7 +232,7 @@ sub pool_next{
         # Write to template process
         #DEBUG and 
         my $windex=$req->[2];
-        say ">> SENDING CMD_SPWAN TO WORKER: $req->[REQ_WORKER], worker index $windex";
+        DEBUG and say ">> SENDING CMD_SPWAN TO WORKER: $req->[REQ_WORKER], worker index $windex";
         my $cread=fileno $pairs[$windex][WORKER_CREAD];
         my $cwrite=fileno $pairs[$windex][WORKER_CWRITE];
 
@@ -300,7 +290,6 @@ sub process_results{
   else{
     $worker=$fd_worker_map{$fd_or_struct};
   }
-  say "PROCESS RESULTS";
   #Check which worker is ready to read.
   # Read the result
   #For now we wait.
@@ -327,7 +316,6 @@ sub process_results{
       if($entry and $entry->[REQ_CB]){
         my @list;
         for my( $error, $family, $type, $protocol, $addr, $canonname)(@res){
-          #say "$entry->[REQ_DATA]";
           if(ref($entry->[REQ_DATA]) eq "ARRAY"){
             push @list, [$error,$family,$type,$protocol, $addr, $canonname]; 
           }
@@ -353,9 +341,7 @@ sub process_results{
       # 
       my $pid=unpack "l>", $bin;
       my $index=$entry->[2];  #
-      use Data::Dumper;
-      say Dumper $entry;
-      say "SPAWN RETURN: pid $pid  index $index";
+      DEBUG and say "SPAWN RETURN: pid $pid  index $index";
       #unshift @pool_free, $index;
       my $worker=$pairs[$index];
       $worker->[WORKER_ID]=$pid;
@@ -406,7 +392,6 @@ sub process_results{
 
 sub results_available {
   my $timeout=shift//0;
-  say "RESULTS AVAILABLE";
   DEBUG and say "CHECKING IF ReSULTS AVAILABLE";
   # Check if any workers are ready to talk 
   my $bits="";
@@ -417,7 +402,6 @@ sub results_available {
   my $count=select $bits, undef, undef, $timeout;
 
   if($count>0){
-    #say "COUNT: $count";
     for(@pairs){
       if($_->[WORKER_ID] and vec($bits, fileno($_->[WORKER_READ]), 1)){
         process_results $_;
@@ -428,8 +412,6 @@ sub results_available {
 }
 
 sub getaddrinfo{
-  say "";
-  say "GETADDRINFO====";
   if( @_ !=0){
 
 
@@ -509,17 +491,14 @@ sub to_watch {
 }
 
 sub monitor_workers {
-say "MONITOR WORKERS=====";
   use POSIX qw<:sys_wait_h :errno_h>; 
 
   # check we have a template
   my $tpid=$pairs[0][WORKER_ID];
   my $res=waitpid $tpid, WNOHANG;
-  say "TEMPLAT PID IS $tpid and res was $res";
   if($res==$tpid){
     # This is the non event case
     $pairs[0][WORKER_ID]=0;
-    say "CLOSING POOL===";
     #close_pool;
     kill_pool;
   }
@@ -527,7 +506,6 @@ say "MONITOR WORKERS=====";
     # Event loops take over the child listening.... so work around
     #
     $pairs[0][WORKER_ID]=0;
-    say "CLOSING POOL ECHILD===";
     #close_pool;
     kill_pool;
   }
@@ -545,24 +523,9 @@ say "MONITOR WORKERS=====";
 }
 
 sub _monitor_callback {
-say "MONITOR CALLBACK";
   
 }
 
-sub cleanup_worker {
-  #remove from pool
-
-  # Remove from free
-
-  # Work with outstanding messages
-}
-
-sub spawn_worker {
-  # Iterate through slots to find a defunct worker
-  
-  # if the templates process is defunct spawn it as a special case
-
-}
 
 sub spawn_template {
   # This should only be called when modules is first loaded, or when an

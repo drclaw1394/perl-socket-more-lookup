@@ -14,7 +14,6 @@ unless(caller){
   my @in_fds;
   my @out_fds;
   my $use_core;#=1;#=1;
-  #say "Processing ARGV";
   while(@ARGV){
     local $_=shift;  
     if(/--in/){
@@ -78,7 +77,6 @@ unless(caller){
     elsif($cmd== CMD_GAI){
       #Assume a request
       my @e =unpack $gai_pack, $bin;
-      #say "inputs: @e";
       my @results;
       my $port=pop @e;
       my $host=pop @e;
@@ -138,21 +136,21 @@ unless(caller){
     elsif($cmd==CMD_REAP){
       #
       my @pids=unpack "l>/l>*", $bin;
-      say "WORKER $$ REAP HANDLER @pids";
+      DEBUG and say "WORKER $$ REAP HANDLER @pids";
       my @reaped;
       for(@pids){
         my $ret;
         if($_){
           # Only do the syscall if the pid is non zero
           $ret=waitpid $_, WNOHANG;
-          say $! if $ret == -1;
+          #say $! if $ret == -1;
         }
         else {
           $ret=0;
         }
         push @reaped, $ret;
       }
-      say "Reaped @reaped";
+      DEBUG and say "WORKER Reaped @reaped";
       $return_out.=pack "l>/l>*", @reaped;
     }
 

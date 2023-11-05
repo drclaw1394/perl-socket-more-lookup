@@ -1,4 +1,29 @@
-use v5.36;
+=head1 NAME
+
+Socket::More::Resolver::AE - Resolver AnyEvent integration
+
+=head1 SYNOPSIS
+
+  use AnyEvent;
+
+  use Socket::More::Resolver;
+
+  ... 
+
+  getaddrinfo...
+
+=head1 DESCRIPTION
+
+Built in driver for integrating L<Socket::More::Resolver> into the
+L<Mojo::IOLoop>.
+
+If the event loop module is already in memory, it should automatically be
+detected when useing L<Socket::More::Resolver>;
+
+=cut
+
+use warnings;
+use strict;
 package Socket::More::Resolver::AE;
 
 # Circular reference to lexical scope variable.
@@ -24,11 +49,6 @@ sub {
   $Socket::More::Resolver::Shared=1; 
   #setup timer to monitor child existance
   $_timer=AE::timer 0, 1, \&Socket::More::Resolver::monitor_workers;
-  my $_sig=AE::signal "CHLD", sub {
-  #say "SIG CHILD $_[0]===========";
-    &Socket::More::Resolver::monitor_workers;
-  };
-  push @$circle, $_sig;
 
 }
 
