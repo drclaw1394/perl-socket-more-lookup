@@ -1,8 +1,10 @@
 package Socket::More::Resolver;
-use v5.36;
+use strict;
+use warnings;
+use feature qw<say state>;
 no warnings "experimental";
 
-use constant::more DEBUG=>1;
+use constant::more DEBUG=>0;
 
 use constant::more qw<CMD_GAI=0   CMD_GNI   CMD_SPAWN   CMD_KILL CMD_REAP>;
 use constant::more qw<WORKER_ID=0 WORKER_READ   WORKER_WRITE  WORKER_CREAD WORKER_CWRITE WORKER_QUEUE  WORKER_BUSY>;
@@ -20,7 +22,7 @@ my $gai_pack="($gai_data_pack)*";
 
 
 
-sub results_available;
+sub _results_available;
 sub process_results;
 sub getaddrinfo;
 sub shrink_pool;
@@ -32,6 +34,7 @@ my $in_flight=0;
 
 #my @pool_free;      # pids (keys) of workers we can use
 my $pool_max=4;
+my $enable_shrink;
 
 
 my @pairs;        # file handles for parent/child pipes
@@ -60,6 +63,7 @@ sub _preexport {
     $pool_max=($options{max_workers}//4);
     $pool_max=4 if $pool_max <=0;
     $pool_max++;
+    $enable_shrink=$options{enable_shrink};
 
     #pre allocate enough pipes for full pool
     for(1..$pool_max){
@@ -147,7 +151,7 @@ sub _preexport {
 # 
 sub _get_worker{
 
-#results_available unless $Shared;
+#_results_available unless $Shared;
     my $worker;
     my $fallback;
     my $unspawned;
@@ -217,10 +221,10 @@ sub pool_next{
   my $w=shift;
 
   # handle returns first .. TODO: This is only if no event system is being used
-  results_available unless $Shared;
+  _results_available unless $Shared;
 
   for($w?$w:@pairs){
-    DEBUG and say "POOL next for ".$_->[WORKER_ID]." busy: $_->[WORKER_BUSY], queue; $_->[WORKER_QUEUE]";
+    DEBUG and say "POOL next for ".$_->[WORKER_ID]." busy: $_->[WORKER_BUSY], queue; ".$_->[WORKER_QUEUE]->@*;
     my $ofd;
     # only process worker is initialized  not busy and  have something to process
     next unless $_->[WORKER_ID];
@@ -330,7 +334,6 @@ sub process_results{
     if($cmd==CMD_GAI){
       DEBUG and say "<< GAI return from worker $entry->[REQ_WORKER]";
       my @res=unpack $gai_pack, $bin;
-      say "REsult code is $res[0]"; 
       if($res[0] and $entry->[REQ_ERR]){
         $entry->[REQ_ERR]($res[0]);
       }
@@ -344,7 +347,7 @@ sub process_results{
             push @list, {family=>$family, socktype=>$type, protocol=>$protocol, addr=>$addr, canonname=>$canonname};
           }
         }
-        $entry->[REQ_CB](\@list);
+        $entry->[REQ_CB](@list);
       }
       else {
         # throw away results
@@ -355,10 +358,15 @@ sub process_results{
     elsif($cmd==CMD_GNI){
       DEBUG and say "<< GNI return from worker $entry->[REQ_WORKER]";
       my ($error, $host, $port)=unpack "l> l>/A* l>/A*", $bin;
-      if($entry and $entry->[REQ_CB]){
-          $entry->[REQ_CB]([$error, $host, $port]);
+      if($error and $entry->[REQ_ERR]){
+        $entry->[REQ_ERR]($error);
       }
-
+      elsif($entry->[REQ_CB]){
+          $entry->[REQ_CB]($host, $port);
+      }
+      else {
+        # Should not get here
+      }
     }
     elsif($cmd==CMD_SPAWN){
       # response from template fork. Add the worker to the pool
@@ -416,7 +424,7 @@ sub process_results{
     pool_next $worker if $Shared;
 }
 
-sub results_available {
+sub _results_available {
   my $timeout=shift//0;
   DEBUG and say "CHECKING IF ReSULTS AVAILABLE";
   # Check if any workers are ready to talk 
@@ -459,12 +467,14 @@ sub getaddrinfo{
     my $req=[CMD_GAI, $i++, $hints, $on_result, $on_error, $worker->[WORKER_ID]];
     push $worker->[WORKER_QUEUE]->@*, $req;
     $in_flight++;
+    #
+    monitor_workers unless $Shared;
+    shrink_pool if $enable_shrink;
   }
 
   pool_next;
-  shrink_pool;
-  monitor_workers unless $Shared;
   #return true if outstanding requests
+  DEBUG and say "IN FLIGHT: $in_flight";
   $in_flight;
 }
 
@@ -590,7 +600,10 @@ sub shrink_pool {
   my $template_worker=spawn_template(); #ensure template exists
   for(reverse(@pairs)){
     next if $_== $template_worker;
-    next if $_->[WORKER_BUSY];
+    next if $_->[WORKER_QUEUE]->@*;
+    next unless $_->[WORKER_ID];
+
+    # send a kill message to any un needed workers
     my $req=[CMD_KILL, $i++, [], undef, undef, $_];
     push $_->[WORKER_QUEUE]->@*, $req;
     $in_flight++;

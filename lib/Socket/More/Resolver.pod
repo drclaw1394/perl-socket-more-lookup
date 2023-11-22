@@ -1,6 +1,6 @@
 =head1 NAME
 
-Socket::More::Resolver - Asynchronous DNS resolving
+Socket::More::Resolver - Loop Agnostic Asynchronous DNS Resolving
 
 =head1 SYNOPSIS
 
@@ -28,121 +28,180 @@ Automatic Event Loop Integration and support
 
 =head1 DESCRIPTION
 
-An asynchronous DNS resolution package use your platforms C<getaddrinfo>  and
-C<getnameinfo> routines. Automatically integrates into supported event loops
-and also provides a polling (non blocking) API.
+Easy to use asynchronous DNS resolution with automatic integration into
+supported event loops.
 
-Unlike the same named routines in core the L<Socket> module, results and errors
-are reported back via callbacks and not return values.
 
-Also the C<getaddrinfo> routine supports array 'struct' fields for hints.
-Results will also be returned in this format instead of a has when used.
+Key features:
 
-When integrated with
-event loops these are executed in a asynchronous manner
+=over
 
-Uses pure Perl unless L<Socket::More::Lookup> in available, (part of
-L<Socket::More>). In this case the lookup routines are used from that module
-(less memory, faster).
+=item Automatically integrates into supported event loops 
 
-=head1 USAGE (with or without an event loop)
+L<AnyEvent>, L<IO::Async>, L<Mojo::IOLoop> are currently supported where
+detected. Driver for other loops can be easily added. Non blocking polling is
+also supported.
 
-The resolver is designed to work with or without an event loop:
+=item Utilises your systems C<getaddrinfo> and C<getnameinfo>
 
-=over 
+Gives the results you would expect from your system configuration
 
-=item Using without an event loop
+=item Pure Perl
 
-  use Socket::More::Resolver (options);
+Uses core Perl L<Socket> unless L<Socket::More::Lookup> in available, (part of
+L<Socket::More>). 
 
-=item Using with an eventloop
+=item Threadless self managed worker pool
 
-  use Socket::More::Resolver::DRIVER::PACKAGE (options);
-
-  eg
-      use Socket::More::Resolver::AE;           #AnyEvent
-      use Socket::More::Resolver::IO::Async;    #IO::Async
-      use Socket::More::Resolver::Mojo::IOLoo;  # Mojo
+The non blocking and asynchronous behaviour is achieved with a fully contained
+and self managing worker pool, optimised for low memory usage and DNS queries.
 
 =back
+
+
+=head1 USAGE 
+
+The resolver is designed to work with or without an event loop with as little
+fuss as possible. Import your event loop first, then this module:
+
+  #use AnyEvnet; #use IO::Async; #use Mojo::IOLoop
+  use Socket::More::Resolver; 
+  
+
+This will perform automatic loop integration, pool management with default
+options and export all symbols
+
+Thanks to L<Export::These>, module options and symbols can be specified at
+import time:
+
+  use Socket::More::Resolver {options}, symbols ...;
+
+  eg
+  use Socket::More::Resolver {max_workers=>10, prefork=>1}, qw<getaddrinfo>;
+
 
 In either case, this will automatically start the worker pool, if it hasn't
 already been started. 
 
-Using the supported event loops, the above will automatically integrate the
-required IO monitoring. Please refer the docs of the builtin drivers for
-details/differences on their usage.
-
-TODO: fix mojo default loop
-
-
 =head2 Options
 
-There a couple of options which influence resolver. These are specified as
-import options in either the event loop driver or non event loop case:
-
+There a handful of options which influence the resolver operation. These are
+specified as hash ref at import:
 
 =over
+
+
+=item max_workers
+  
+  max_worker=>number
+
+Sets the maximum number of workers to spawn. The default is 4.
+
+=item prefork
+
+  prefork=>bool
+
+Start all workers at launch instead of as needed.
+
 =item no_export
 
   no_export=>1
 
 When set to a true value, prevents the exporting of symbols into the target
-namespace. Useful when making a wrapper class/driver for event loops that want
-to use the same names
+namespace.
 
-=item max_worker
-  
-  max_worker=>$number
+=item no_loop
 
-This item sets the maximum number of workers to spawn. The default is 4.
+  no_loop=>bool
 
-=item prefork
+When set prevents the integration into event loop. Testing use mainly
 
-  prefork=>1||0
+=item loop_driver
 
-Start all workers at launch instead of as needed.
+  loop_driver=>string
+  loop_driver=>ARRAY
+  loop_driver=>CODE
 
-=head1 Adding other event loops
+Provides a hook mechanism to add support for other event loops. If a string or
+array ref are provided, the contents are unshifted to the internal 'search
+list' of event loop package names.  
 
-If you need to add an event loop which isn't directly supported, the easiest
-way is to look at the code for one of the existing drivers. The basic idea is
-to use the reexporting facility in L<Export::These> to pass through import
-options to L<Socket::More::Resolver>. The name of thedriver is completely up to
-the author.
+If these packages are loaded, then the first one detected will be considered
+the event loop to use. 
 
-There is no class/OO/mixin requirements from the resolver, so the driver can be
-written based around your event loop API and inheritance structure.
+If a code ref is provided, package name search is bypassed and  the code ref is
+used as a callback.
+
+See the below on writing a driver.
+
+
+=back
+
 
 
 =head2 API
 
+The API is focused on asyncrhonous usage. That means callbacks are used for
+reporting results and  errors
+
+=head3 getaddrinfo
+
+  getaddrinfo(host, port, hints, on_results, on_error);
+
+  eg
+
+    getaddrinfo 
+      "www.google.com",
+      80,
+      {family=>AF_INET}, 
+      sub {
+        for(@_){
+          # Process results
+        }
+      },
+      sub {
+        # Handle error
+      }
+
+C<host> is the hostname or numerical address of the host to resolve
+C<port> is the port of the host to use
+C<hints> is hash of hints to adjust processing and restrict results
+Please refer to L<Socket> or L<Socke::More::Lookup> for details on how these
+values are used.
+
+C<on_results> is callback which is called with the results from the query if no error occured.
+C<on_error> is callback which is called with an error code.
 
 
-=head2 Supported Event Loops
+If called with no arguments, services the request queue and checks for
+availability of results.  When not using an event loop this acts as the polling
+mechanism:
 
-=over
+  eq
+   getaddrinfo(...);
 
-=item AnyEvent
+   while(getaddrinfo){
+    # poll here until all requests are processed
+   }
 
-=back
+
+
+
+=head1 Supporting other event loops
+
+If you need to add an event loop which isn't directly supported, the easiest
+way is to look at the code for one of the existing drivers.
+
+TODO: document this more
 
 =head1 How it works (High Level)
 
 When the L<Socket::More::Resolver> package is loaded for the first time, it
-initialises a pool of pipes to be used by workers.  The first worker, also used
-as a templates process, is spawned (forked and exec) into the
+initialises a pool of pipes to be used by workers.  The first 'worker', is used
+as a templates process and is spawned (forked and exec) into the
 L<Socket::More::Resolver::Worker>.
 
-Detection of the event system is performed in the parent process, and read
-monitoring in setup on the 
-
-Subsequent importing of the
-module does not load additional.
-
-
-
-
+TODO: Document more
 
 
 
@@ -150,9 +209,23 @@ module does not load additional.
 
 L<Net::DNS::Native>
 
-  Use Internal threads
-  Awkward interface for integration into event loop
+  Uses Internal C level threads
   Returns file handles for each resolution request
+  Awkward interface for integration into event loop
 
+L<IO::Async>
 
+  Uses Socket module
+  Purportedly asynchronouse getaddrinfo, but can block on a single slow request
+
+L<Mojo::IOLoop>
   
+  Uses Net::DNS::Native
+
+L<AnyEvent>
+
+  Implements it's own resolver
+  Doesn't use system confuration
+  Doesn't work with local multicast DNS
+
+

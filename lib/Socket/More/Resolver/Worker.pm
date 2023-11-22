@@ -49,8 +49,11 @@ unless(caller){
 
   #Simply loop over inputs and outputs
   DEBUG and say "Worker waiting for line ...";
+  my $counter=0;
   while(<$in>){
+
     DEBUG and say "Worker got line...";
+    $0="S::M::R::W-".$counter++;
     #parse
     # Host, port, hints
     chomp;  
