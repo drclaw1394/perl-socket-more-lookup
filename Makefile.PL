@@ -4,16 +4,16 @@ use ExtUtils::MakeMaker;
 # the contents of the Makefile that is written.
 WriteMakefile(
     NAME              => 'Socket::More::Lookup',
-    VERSION_FROM      => 'lib/Socket/More/Lookup.pm', # finds $VERSION, requires EU::MM from perl >= 5.5
+    VERSION_FROM      => 'lib/Socket/More/Lookup.pm', 
     PREREQ_PM         => {
-      "Export::These" =>"v0.2.0",
+      "Export::These" =>"v0.2.1",
       "Socket::More::Constants"=>0
     }, 
-    ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pod', # retrieve abstract from module
+    ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pod', 
     AUTHOR            => 'Ruben Westerberg <drclaw@mac.com>',
-    LIBS              => [''], # e.g., '-lm'
-    DEFINE            => '', # e.g., '-DHAVE_SOMETHING'
-    INC               => '-I.', # e.g., '-I. -I/usr/include/other'
+    LIBS              => [''], 
+    DEFINE            => '', 
+    INC               => '-I.',
 
 	MIN_PERL_VERSION=>"v5.36.0",
 	META_ADD => {

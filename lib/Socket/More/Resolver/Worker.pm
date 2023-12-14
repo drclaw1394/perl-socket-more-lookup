@@ -1,10 +1,8 @@
 package Socket::More::Resolver::Worker;
-use strict;
-use warnings;
-use feature "say";
+use v5.36;
 unless(caller){
   $0="S::M::R::W";
-  my $gai_data_pack="l> l> l> l> l>/A* l>/A*";
+  my $gai_data_pack="l> l> l> l> l>/a* l>/a*";
   my $gai_pack="($gai_data_pack)*";
 
   package main;
@@ -129,16 +127,16 @@ unless(caller){
 
     elsif($cmd==CMD_GNI){
       DEBUG and say "WORKER $$ PROCESSIG GNI REQUEST, id: $req_id";
-      my @e=unpack "l>/A* l>", $bin;
+      my @e=unpack "l>/a* l>", $bin;
       if($use_core){
         require Socket;
         my($rc, $host, $service)=Socket::getnameinfo(@e);
-        $return_out.=pack "l> l>/A* l>/A*",$rc, $host, $service;
+        $return_out.=pack "l> l>/a* l>/a*",$rc, $host, $service;
       }
       else {
         require Socket::More::Lookup;
         my $rc=Socket::More::Lookup::getnameinfo($e[0],my $host="", my $service="", $e[1]);
-        $return_out.=pack "l> l>/A* l>/A*",$rc, $host, $service;
+        $return_out.=pack "l> l>/a* l>/a*",$rc, $host, $service;
       }
     }
 
@@ -157,7 +155,6 @@ unless(caller){
         if($_){
           # Only do the syscall if the pid is non zero
           $ret=waitpid $_, WNOHANG;
-          #say $! if $ret == -1;
         }
         else {
           $ret=0;

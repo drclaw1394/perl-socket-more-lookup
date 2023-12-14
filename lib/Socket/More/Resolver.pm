@@ -1,9 +1,6 @@
 package Socket::More::Resolver;
-use strict;
-use warnings;
-use feature qw<say state>;
+use v5.36;
 no warnings "experimental";
-
 use constant::more DEBUG=>0;
 
 use constant::more qw<CMD_GAI=0   CMD_GNI   CMD_SPAWN   CMD_KILL CMD_REAP>;
@@ -14,7 +11,7 @@ use Fcntl;
 
 use Export::These qw<getaddrinfo getnameinfo close_pool>;
 
-my $gai_data_pack="l> l> l> l> l>/A* l>/A*";
+my $gai_data_pack="l> l> l> l> l>/a* l>/a*";
 
 #REQID  and as above
 #
@@ -56,7 +53,8 @@ sub _preexport {
 
   my %options=map %$_, grep ref, @_;
   
-
+  #my @imports=map %$_, grep !ref, @_;
+    
   # Don't generate pairs if they already exist
   if(!@pairs){
 
@@ -320,7 +318,7 @@ sub process_results{
     my $bin=pack "H*", $_;
 
     my ($cmd, $id)=unpack "l> l>", $bin;
-    $bin=substr $bin, 8;  #two lots of shorts
+    $bin=substr $bin, 8;  #two lots of long
 
     # Remove from the outstanding table
     my $entry=shift $worker->[WORKER_QUEUE]->@*;
