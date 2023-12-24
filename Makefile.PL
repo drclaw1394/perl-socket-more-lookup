@@ -7,7 +7,8 @@ WriteMakefile(
     VERSION_FROM      => 'lib/Socket/More/Lookup.pm', 
     PREREQ_PM         => {
       "Export::These" =>"v0.2.1",
-      "Socket::More::Constants"=>0
+      "Socket::More::Constants"=>0,
+      "constant::more"=>"v0.3.0",
     }, 
     ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pod', 
     AUTHOR            => 'Ruben Westerberg <drclaw@mac.com>',
