@@ -7,7 +7,7 @@ WriteMakefile(
     VERSION_FROM      => 'lib/Socket/More/Lookup.pm', 
     PREREQ_PM         => {
       "Export::These" =>"v0.2.1",
-      "Socket::More::Constants"=>0,
+      "Socket::More::Constants"=>"v0.1.1",
       "constant::more"=>"v0.3.0",
     }, 
     ABSTRACT_FROM     => 'lib/Socket/More/Lookup.pod', 
@@ -25,7 +25,7 @@ WriteMakefile(
 			repository =>{
 				type => "git",
 				url => "git://github.com/drclaw1394/perl-socket-more-lookup.git",
-				web => "http://github.com/drclaw1394/perl-socket-more-lookup",
+				web => "https://github.com/drclaw1394/perl-socket-more-lookup",
 			}
 		}
 	}
